@@ -1,0 +1,929 @@
+{
+  "name": "AI receptionist — Gestionar cambios de reunión",
+  "description": "Borrador inactivo: cancelación y reprogramación con confirmación explícita y una sola reserva activa por contacto.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "fd83ecc5-dfcc-4c83-99c4-db05cd235d06",
+      "name": "Manual — Probar cambio de reunión",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "f9d5d5ca-be2c-45ed-8211-d484fd2d66fb",
+      "name": "Datos — Cambio de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c4c77ec8-58ac-4029-9da3-413184ea604d",
+              "name": "from",
+              "value": "<WHATSAPP_PHONE_NUMBER>",
+              "type": "string"
+            },
+            {
+              "id": "6115f3f4-5a1e-4340-9b18-ee319fb0cb8c",
+              "name": "messageText",
+              "value": "Cancelar mi reunión",
+              "type": "string"
+            },
+            {
+              "id": "21a8ba66-0540-4c05-bc0e-b04327f4f0da",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        }
+      }
+    },
+    {
+      "id": "e6ea399f-36c0-4670-a76d-190da4a7fcb0",
+      "name": "Cuando lo ejecuta el coordinador",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        -960,
+        340
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "61f67d29-c7ac-4e5a-ab2f-9f00b8ced16f",
+      "name": "Lógica — Normalizar cambio solicitado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const input=$input.first().json;\nconst contextual=input.contextualChangeSelection&&typeof input.contextualChangeSelection==='object'?input.contextualChangeSelection:null;\nif(contextual&&['cancel','reschedule'].includes(String(contextual.changeType||''))&&typeof contextual.slotStart==='string'&&contextual.slotStart){return [{json:{...input,changeType:String(contextual.changeType),selectedReservationStart:contextual.slotStart,requestedTargetStart:String(contextual.requestedTargetStart||''),selectedReferenceDay:0,selectedReferenceMonth:0,selectedReferenceYear:0,selectedReferenceTime:'',selectedReferenceTimes:[],parseReason:'ok'}}];}\nconst message=typeof input.messageText==='string'?input.messageText.trim():'';\nconst from=typeof input.from==='string'?input.from.trim():'';\nconst normalized=message.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();\nconst empty={day:-1,month:-1,year:-1,hour:-1,minute:-1};const semantic=input.semanticReference&&typeof input.semanticReference==='object'?input.semanticReference:empty;const semanticTarget=input.semanticRescheduleTarget&&typeof input.semanticRescheduleTarget==='object'?input.semanticRescheduleTarget:empty;\nconst positive=value=>Number.isInteger(Number(value))&&Number(value)>0?Number(value):0;\nconst months={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};\nconst timeOf=(hour,minute,suffix)=>{let value=Number(hour);const period=String(suffix||'');if(/tarde|pm/.test(period)&&value<12)value+=12;else if(/manana|am/.test(period)&&value===12)value=0;else if(!period&&value>0&&value<8)value+=12;return value>=0&&value<=23?`${String(value).padStart(2,'0')}:${String(minute||'00').padStart(2,'0')}`:'';};\nconst direct=[];for(const match of message.matchAll(/(\\d{4})-(\\d{1,2})-(\\d{1,2})\\s*(?:a\\s+las\\s+)?([01]?\\d|2[0-3]):([0-5]\\d)|(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})\\s*(?:a\\s+las\\s+)?([01]?\\d|2[0-3]):([0-5]\\d)/gi)){const year=Number(match[1]||match[8]),month=Number(match[2]||match[7]),day=Number(match[3]||match[6]),time=`${String(match[4]||match[9]).padStart(2,'0')}:${match[5]||match[10]}`;direct.push({day,month,year,time});}\nconst natural=[];for(const match of normalized.matchAll(/(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)?\\s*(\\d{1,2})(?:\\s+de\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre))?(?:\\s+de\\s+(\\d{4}))?\\s+(?:a\\s+)?las\\s+(\\d{1,2})(?::([0-5]\\d)|\\s+y\\s+(media))?\\s*(de la tarde|de la manana|am|pm)?/gi)){const time=timeOf(match[4],match[5]||((match[6]||'')==='media'?'30':'00'),match[7]);if(time)natural.push({day:Number(match[1]),month:Number(months[match[2]]||0),year:Number(match[3]||0),time});}\nconst references=direct.length?direct:natural;\nconst lexicalTimes=[...normalized.matchAll(/(?:\\ba\\s+)?\\blas\\s+(\\d{1,2})(?::([0-5]\\d)|\\s+y\\s+(media))?\\s*(de la tarde|de la manana|am|pm)?/gi)].map(match=>timeOf(match[1],match[2]||((match[3]||'')==='media'?'30':'00'),match[4])).filter(Boolean);\nconst selectionReference=/^(?:la|el)\\s+(?:del|de la|de las)\\s+.+/.test(normalized)||[semantic.day,semantic.month,semantic.year,semantic.hour,semantic.minute].some(value=>Number(value)>=0);\nconst hasCancel=/(?:\\bcancel(?:ar|a|alo|ala)?\\b|dar(?:la)? de baja|\\bborrar\\b|\\beliminar\\b|\\banular\\b|\\bcancel\\b|\\bdelete\\b|\\bremove\\b|\\bcall off\\b)/i.test(normalized)||selectionReference||(/\\b(?:no voy a poder|no puedo|se me complica|no llego)\\s+(?:ir|asistir)\\b/.test(normalized)&&/\\b(?:reunion|turno|meeting|call)\\b/.test(normalized));\nconst hasReschedule=/\\b(?:reprogramar|reprograma|reprogramalo|reprogramala|cambiar|cambia|pasar|pasala|pasarlo|reschedule)\\b/i.test(normalized);\nconst named=normalized.match(/(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)?\\s*(\\d{1,2})\\s+de\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\\s+de\\s+(\\d{4}))?/);const bareNamed=normalized.match(/\\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\s+(\\d{1,2})\\b/);const numeric=normalized.match(/\\b(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{4}))?\\b/);\nconst toInstant=(reference,inherited={})=>{const day=positive(reference.day),month=positive(reference.month)||positive(inherited.month),time=String(reference.time||'');if(!day||!month||!/^\\d{2}:\\d{2}$/.test(time))return '';let year=positive(reference.year)||positive(inherited.year)||new Date().getFullYear();const base=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${time}:00-03:00`;let date=new Date(base);if(!positive(reference.year)&&!positive(inherited.year)&&date.getTime()<Date.now()-86400000){year++;date=new Date(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${time}:00-03:00`);}return Number.isNaN(date.getTime())?'':date.toISOString();};\nlet changeType='unsupported',selectedReservationStart='',requestedTargetStart='',parseReason='unsupported_request',sourceReference={day:0,month:0,year:0,time:''};\nif(hasReschedule){changeType='reschedule';sourceReference=references[0]||{day:positive(semantic.day),month:positive(semantic.month),year:positive(semantic.year),time:Number(semantic.hour)>=0?`${String(semantic.hour).padStart(2,'0')}:${String(Number(semantic.minute)>=0?semantic.minute:0).padStart(2,'0')}`:''};if(!sourceReference.time&&lexicalTimes.length)sourceReference.time=lexicalTimes[0];const targetReference=references.length>1?references[1]:{day:positive(semanticTarget.day),month:positive(semanticTarget.month),year:positive(semanticTarget.year),time:Number(semanticTarget.hour)>=0?`${String(semanticTarget.hour).padStart(2,'0')}:${String(Number(semanticTarget.minute)>=0?semanticTarget.minute:0).padStart(2,'0')}`:''};requestedTargetStart=toInstant(targetReference,sourceReference);parseReason=requestedTargetStart?'ok':'missing_target_time';}\nelse if(hasCancel){changeType='cancel';selectedReservationStart=direct.length===1?toInstant(direct[0]):'';parseReason='ok';sourceReference={day:positive(named?.[1]||numeric?.[1]||bareNamed?.[1]||semantic.day),month:positive(named?months[named[2]]:numeric?.[2]||semantic.month),year:positive(named?.[3]||numeric?.[3]||semantic.year),time:lexicalTimes[0]||(Number(semantic.hour)>=0?`${String(semantic.hour).padStart(2,'0')}:${String(Number(semantic.minute)>=0?semantic.minute:0).padStart(2,'0')}`:'')};}\nconst selectedReferenceTimes=changeType==='cancel'?[...new Set(lexicalTimes)]:sourceReference.time?[sourceReference.time]:[];\nreturn [{json:{...input,from,messageText:message,changeType,selectedReservationStart,requestedTargetStart,selectedReferenceDay:sourceReference.day,selectedReferenceMonth:sourceReference.month,selectedReferenceYear:sourceReference.year,selectedReferenceTime:sourceReference.time,selectedReferenceTimes,parseReason}}];"
+      }
+    },
+    {
+      "id": "4c183559-7177-4e64-a53e-6fdf381524ca",
+      "name": "Data Tables — Buscar reservas del contacto",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -280,
+        240
+      ],
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "contactPhone",
+              "keyValue": "={{ $('Lógica — Normalizar cambio solicitado').first().json.from }}"
+            }
+          ]
+        },
+        "returnAll": true,
+        "orderBy": true,
+        "orderByColumn": "slotStart",
+        "orderByDirection": "ASC"
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "b9f0e0fe-a663-496f-8875-41717c8152fb",
+      "name": "Lógica — Seleccionar reserva activa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const request=$('Lógica — Normalizar cambio solicitado').first().json;\nconst active=$input.all().map(item=>item.json).filter(row=>['reserved','rescheduled'].includes(String(row.status||''))&&String(row.reservationEventId||'').trim()!=='');\nconst timezone='America/Argentina/Buenos_Aires';\nconst formatLabel=value=>{const date=new Date(String(value||''));return Number.isNaN(date.getTime())?'horario sin fecha':new Intl.DateTimeFormat('es-AR',{timeZone:timezone,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(date).replace(',','');};\nconst localParts=value=>{const [date,time]=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)).split(', ');const [day,month,year]=date.split('/').map(Number);return {day,month,year,time};};\nconst activeReservations=active.map(row=>({calendarId:String(row.calendarId||''),reservationEventId:String(row.reservationEventId||''),slotStart:String(row.slotStart||''),slotEnd:String(row.slotEnd||''),label:formatLabel(row.slotStart)}));\nconst selectedStart=String(request.selectedReservationStart||'');const selectedTimestamp=selectedStart?new Date(selectedStart).getTime():NaN;\nconst day=Number(request.selectedReferenceDay)>0?Number(request.selectedReferenceDay):0,month=Number(request.selectedReferenceMonth)>0?Number(request.selectedReferenceMonth):0,year=Number(request.selectedReferenceYear)>0?Number(request.selectedReferenceYear):0;\nconst selectedTimes=[...new Set((Array.isArray(request.selectedReferenceTimes)?request.selectedReferenceTimes:[request.selectedReferenceTime]).filter(value=>/^\\d{2}:\\d{2}$/.test(String(value))))];\nconst hasReference=Boolean(day||month||year||selectedTimes.length);\nconst matchesReference=row=>{const local=localParts(row.slotStart);return (!day||local.day===day)&&(!month||local.month===month)&&(!year||local.year===year)&&(!selectedTimes.length||selectedTimes.includes(local.time));};\nconst selectedCandidates=!Number.isNaN(selectedTimestamp)?active.filter(row=>new Date(String(row.slotStart||'')).getTime()===selectedTimestamp):hasReference?active.filter(matchesReference):[];\nconst matchingReservations=selectedCandidates.map(row=>({calendarId:String(row.calendarId||''),reservationEventId:String(row.reservationEventId||''),slotStart:String(row.slotStart||''),slotEnd:String(row.slotEnd||''),label:formatLabel(row.slotStart)}));\nlet reservation=null,reservations=[];let changeReason=String(request.parseReason||'unsupported_request');\nif(request.changeType==='cancel'||request.changeType==='reschedule'){\n if(request.parseReason!=='ok')changeReason=request.parseReason;\n else if(selectedStart||hasReference){\n   if(request.changeType==='cancel'&&selectedTimes.length>1&&selectedCandidates.length===selectedTimes.length){reservations=selectedCandidates;changeReason='selected_batch_by_reference';}\n   else if(selectedCandidates.length===1){reservation=selectedCandidates[0];changeReason=selectedStart?'selected_by_date':'selected_by_reference';}\n   else if(selectedCandidates.length>1)changeReason='multiple_active_reservations';\n   else changeReason='selected_reference_not_found';\n }else if(active.length===1){reservation=active[0];changeReason='single_active_reservation';}\n else if(active.length>1)changeReason='multiple_active_reservations';\n else changeReason='no_active_reservation';\n}\nconst requestedTarget=new Date(String(request.requestedTargetStart||''));const hasFutureTarget=request.changeType!=='reschedule'||(!Number.isNaN(requestedTarget.getTime())&&requestedTarget.getTime()>Date.now());\nif(reservation&&request.changeType==='reschedule'&&!hasFutureTarget){reservation=null;changeReason='invalid_target_time';}\nconst changeRoute=reservations.length>1?'cancel_batch':reservation?request.changeType:'needs_clarification';\nreturn [{json:{...request,reservationCount:active.length,activeReservations,matchingReservations,selectedReservations:reservations.map(row=>({calendarId:String(row.calendarId||''),reservationEventId:String(row.reservationEventId||''),slotStart:String(row.slotStart||''),slotEnd:String(row.slotEnd||''),label:formatLabel(row.slotStart)})),calendarId:(reservation||reservations[0])?.calendarId||'',reservationEventId:reservation?.reservationEventId||'',reservationOfferToken:reservation?.offerToken||'',reservationSlotStart:reservation?.slotStart||reservations[0]?.slotStart||'',reservationSlotEnd:reservation?.slotEnd||reservations[0]?.slotEnd||'',requestedStart:request.requestedTargetStart||'',changeReason,change_route:changeRoute}}];"
+      }
+    },
+    {
+      "id": "fbcb8614-88ef-4c9a-842c-8656064fc710",
+      "name": "Lógica — ¿Cambio posible?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ['cancel','cancel_batch','reschedule'].includes($json.change_route) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "653b9ad3-4aa1-41e5-bea1-051370db87b4",
+      "name": "Lógica — ¿Es cancelación?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ['cancel', 'cancel_batch'].includes(String($json.change_route || '')) ? 'cancel' : 'reschedule' }}",
+              "rightValue": "cancel",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "0a6fd0cc-eadf-4c3f-8994-b985b5dd4ae5",
+      "name": "Lógica — Validar nuevo horario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Seleccionar reserva activa').first().json;\nconst start=new Date(String(source.requestedStart||''));\nconst valid=!Number.isNaN(start.getTime())&&start.getTime()>Date.now();\nconst format=(date)=>new Date(date.getTime()-3*60*60*1000).toISOString().slice(0,19)+'-03:00';\nreturn [{json:{...source,requestedStart:valid?format(start):'',requestedEnd:valid?format(new Date(start.getTime()+30*60*1000)):'',offerExpiresAt:new Date(Date.now()+15*60*1000).toISOString(),timezone:'America/Argentina/Buenos_Aires',targetReservationEventId:source.reservationEventId,changeType:'reschedule',reschedule_route:valid?'offer':'needs_clarification',changeReason:valid?source.changeReason:'invalid_target_time'}}];"
+      }
+    },
+    {
+      "id": "082eaa2e-9568-4196-8c93-104b9f1b9dbe",
+      "name": "Lógica — ¿Nuevo horario válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.reschedule_route }}",
+              "rightValue": "offer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f2fd6b83-6bf5-4c97-b7ec-4dc96a19beb7",
+      "name": "Agenda — Generar oferta de reprogramación",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1320,
+        360
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Generar oferta de agenda"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "68720386-887a-4a62-a648-032bc7c6ecf3",
+      "name": "Operación — Preparar propuesta de reprogramación",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1560,
+        360
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "45ad32c7-eba4-4e48-ac1f-f2a731e23f01",
+              "name": "outcome",
+              "value": "booking_offer_created",
+              "type": "string"
+            },
+            {
+              "id": "bef1614b-dafd-4727-b42e-fbe2882eb8d7",
+              "name": "changeType",
+              "value": "reschedule",
+              "type": "string"
+            },
+            {
+              "id": "5b72ca47-8e8f-4804-941f-fe663b454474",
+              "name": "offerToken",
+              "value": "={{ $json.offerToken }}",
+              "type": "string"
+            },
+            {
+              "id": "ae993f36-2e1b-4221-9b5d-3f3f1e3c1945",
+              "name": "slotStart",
+              "value": "={{ $json.slotStart }}",
+              "type": "string"
+            },
+            {
+              "id": "a6e9e225-586d-41d5-b175-d3caf00665f2",
+              "name": "slotEnd",
+              "value": "={{ $json.slotEnd }}",
+              "type": "string"
+            },
+            {
+              "id": "cdaacac1-5b32-411f-93fa-c6bf9433649f",
+              "name": "expiresAt",
+              "value": "={{ $json.expiresAt }}",
+              "type": "string"
+            },
+            {
+              "id": "910a9c85-9ee1-4b33-b4ca-503fc4b98a4c",
+              "name": "automationEligible",
+              "value": true,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        }
+      }
+    },
+    {
+      "id": "d02ca018-067a-4d5e-81b5-034610289ba4",
+      "name": "Revisión humana — Cambio no disponible",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        680,
+        520
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6be7fcce-ed18-4047-b8b2-1acee58c4158",
+              "name": "outcome",
+              "value": "={{ $json.changeReason === 'multiple_active_reservations' ? 'booking_change_selection_required' : 'booking_change_clarification_required' }}",
+              "type": "string"
+            },
+            {
+              "id": "aab76c84-9ed8-4c7c-bc2f-fb0ef2fc2419",
+              "name": "changeType",
+              "value": "={{ $('Lógica — Seleccionar reserva activa').first().json.changeType }}",
+              "type": "string"
+            },
+            {
+              "id": "e7f00766-61db-40fe-b31b-7ded20285894",
+              "name": "changeReason",
+              "value": "={{ $('Lógica — Seleccionar reserva activa').first().json.changeReason }}",
+              "type": "string"
+            },
+            {
+              "id": "c38f963d-553b-4ae8-b8a5-9d432dfee871",
+              "name": "activeReservations",
+              "value": "={{ $('Lógica — Seleccionar reserva activa').first().json.activeReservations }}",
+              "type": "array"
+            },
+            {
+              "id": "d07fc1b2-4906-49b4-a3f0-f89af13c23f9",
+              "name": "automationEligible",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "04b3e2c3-7cc9-4487-a774-539e6961a8e3",
+              "name": "matchingReservations",
+              "value": "={{ $('Lógica — Seleccionar reserva activa').first().json.matchingReservations }}",
+              "type": "array"
+            }
+          ],
+          "options": {}
+        }
+      }
+    },
+    {
+      "id": "cdcfb3c5-b756-4f19-a131-b0e116e22091",
+      "name": "Nota — seguridad de cambios",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        620
+      ],
+      "parameters": {
+        "width": 560,
+        "height": 180,
+        "content": "Borrador inactivo. Se busca exactamente una reserva activa por teléfono. La cancelación borra el evento antes de marcar la fila. La reprogramación solo genera una nueva oferta; el evento existente no se mueve hasta que se confirme explícitamente."
+      }
+    },
+    {
+      "id": "37db166e-d5c2-4a52-b6ed-40672bec591e",
+      "name": "Lógica — Preparar oferta de cancelación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        70
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Seleccionar reserva activa').first().json;\nconst selected=Array.isArray(source.selectedReservations)&&source.selectedReservations.length?source.selectedReservations:source.reservationEventId?[{calendarId:source.calendarId,reservationEventId:source.reservationEventId,slotStart:source.reservationSlotStart,slotEnd:source.reservationSlotEnd,label:source.reservationSlotStart}]:[];\nconst ids=selected.map(item=>String(item.reservationEventId||'').trim()).filter(Boolean);\nif(!ids.length)throw new Error('No hay una reserva válida para preparar la cancelación.');\nconst batch=ids.length>1;\nreturn [{json:{...source,calendarId:String(selected[0].calendarId||source.calendarId||''),changeType:batch?'cancel_batch':'cancel',targetReservationEventId:batch?JSON.stringify(ids):ids[0],cancellationCount:ids.length,cancellationLabels:selected.map(item=>String(item.label||item.slotStart||'horario sin fecha')),offerExpiresAt:new Date(Date.now()+15*60*1000).toISOString(),timezone:'America/Argentina/Buenos_Aires'}}];"
+      }
+    },
+    {
+      "id": "c06ffc1b-7ce9-40a3-bbea-e2aeca6047ed",
+      "name": "Crypto — Generar token de cancelación",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        880,
+        70
+      ],
+      "parameters": {
+        "action": "generate",
+        "dataPropertyName": "offerToken",
+        "encodingType": "uuid"
+      }
+    },
+    {
+      "id": "84c2cab8-bb07-4a88-a67c-573a1d3f63c3",
+      "name": "Data Tables — Guardar propuesta de cancelación",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        70
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "offerToken": "={{ 'offer_' + $json.offerToken.replace(/-/g, '') }}",
+            "slotStart": "={{ $('Crypto — Generar token de cancelación').first().json.reservationSlotStart }}",
+            "slotEnd": "={{ $('Crypto — Generar token de cancelación').first().json.reservationSlotEnd }}",
+            "calendarId": "={{ $('Crypto — Generar token de cancelación').first().json.calendarId }}",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "status": "offered",
+            "expiresAt": "={{ $('Crypto — Generar token de cancelación').first().json.offerExpiresAt }}",
+            "consumedAt": "",
+            "reservationEventId": "",
+            "contactPhone": "={{ $('Crypto — Generar token de cancelación').first().json.from }}",
+            "changeType": "={{ $('Crypto — Generar token de cancelación').first().json.changeType }}",
+            "targetReservationEventId": "={{ $('Crypto — Generar token de cancelación').first().json.targetReservationEventId }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "offerToken",
+              "displayName": "offerToken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "slotStart",
+              "displayName": "slotStart",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "slotEnd",
+              "displayName": "slotEnd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "calendarId",
+              "displayName": "calendarId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "timezone",
+              "displayName": "timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "expiresAt",
+              "displayName": "expiresAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reservationEventId",
+              "displayName": "reservationEventId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "contactPhone",
+              "displayName": "contactPhone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "changeType",
+              "displayName": "changeType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "targetReservationEventId",
+              "displayName": "targetReservationEventId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e0efe82a-6c52-495b-b9c1-1fc157bd1c3d",
+      "name": "Operación — Preparar propuesta de cancelación",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1320,
+        70
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0e87e291-66e6-474f-9bff-7ea897f650b8",
+              "name": "outcome",
+              "value": "booking_cancellation_offer_created",
+              "type": "string"
+            },
+            {
+              "id": "3aa65abc-b915-4001-8a92-301efaf954fe",
+              "name": "offerToken",
+              "value": "={{ $json.offerToken }}",
+              "type": "string"
+            },
+            {
+              "id": "6fc6512f-7ec3-4477-b1e6-e93aa78c3418",
+              "name": "slotStart",
+              "value": "={{ $json.slotStart }}",
+              "type": "string"
+            },
+            {
+              "id": "6ea01aad-78fd-4a5c-bce7-2bf3ccb4f569",
+              "name": "expiresAt",
+              "value": "={{ $json.expiresAt }}",
+              "type": "string"
+            },
+            {
+              "id": "ac493999-a072-48dd-a572-99b031555df4",
+              "name": "automationEligible",
+              "value": true,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        }
+      }
+    },
+    {
+      "id": "4a1369e9-2d71-492f-8a9c-1a3349867ee3",
+      "name": "Lógica — Preparar selección contextual de cambio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        520
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Seleccionar reserva activa').first().json;\nconst candidates=Array.isArray(source.matchingReservations)&&source.matchingReservations.length?source.matchingReservations:(Array.isArray(source.activeReservations)?source.activeReservations:[]);\nconst state={kind:'meeting_change_selection',changeType:String(source.changeType||''),requestedTargetStart:String(source.requestedTargetStart||''),candidates:candidates.map(candidate=>({slotStart:String(candidate.slotStart||''),label:String(candidate.label||'')}))};\nconst serialized=JSON.stringify(state);\nif(serialized.length>500)return [{json:{...source,outcome:'booking_change_clarification_required',changeReason:'selection_state_too_large',automationEligible:true}}];\nreturn [{json:{...source,selectionState:serialized,selectionExpiresAt:new Date(Date.now()+900000).toISOString()}}];"
+      }
+    },
+    {
+      "id": "843143a3-5cd1-40d6-8e3f-ba0e89e52df5",
+      "name": "Data Tables — Guardar selección contextual de cambio",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        520
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "offerToken": "={{ 'change_selection_' + Date.now() }}",
+            "slotStart": "",
+            "slotEnd": "",
+            "calendarId": "<SELECT_CALENDAR>",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "status": "suggested",
+            "expiresAt": "={{ $json.selectionExpiresAt }}",
+            "consumedAt": "",
+            "reservationEventId": "",
+            "contactPhone": "={{ $json.from }}",
+            "changeType": "change_selection",
+            "targetReservationEventId": "={{ $json.selectionState }}"
+          },
+          "matchingColumns": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8a2a021d-36f7-4a35-982b-b4f7d6790d81",
+      "name": "Operación — Responder selección contextual de cambio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        520
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Preparar selección contextual de cambio').first().json;\nreturn [{json:{...source,outcome:'booking_change_selection_required',matchingReservations:JSON.parse(source.selectionState).candidates,automationEligible:true}}];"
+      }
+    },
+    {
+      "id": "d20f1591-e771-4775-a2f0-899116485a84",
+      "name": "Lógica — ¿Hay varias reuniones para seleccionar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        340,
+        520
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.changeReason }}",
+              "rightValue": "multiple_active_reservations",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Manual — Probar cambio de reunión": {
+      "main": [
+        [
+          {
+            "node": "Datos — Cambio de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Cambio de prueba": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Normalizar cambio solicitado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta el coordinador": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Normalizar cambio solicitado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Normalizar cambio solicitado": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar reservas del contacto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar reservas del contacto": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Seleccionar reserva activa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Seleccionar reserva activa": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Cambio posible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Cambio posible?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Es cancelación?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Hay varias reuniones para seleccionar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Es cancelación?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar oferta de cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Validar nuevo horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar nuevo horario": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Nuevo horario válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Nuevo horario válido?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Generar oferta de reprogramación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Cambio no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Generar oferta de reprogramación": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar propuesta de reprogramación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar oferta de cancelación": {
+      "main": [
+        [
+          {
+            "node": "Crypto — Generar token de cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crypto — Generar token de cancelación": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Guardar propuesta de cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Guardar propuesta de cancelación": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar propuesta de cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Hay varias reuniones para seleccionar?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar selección contextual de cambio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Cambio no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar selección contextual de cambio": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Guardar selección contextual de cambio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Guardar selección contextual de cambio": {
+      "main": [
+        [
+          {
+            "node": "Operación — Responder selección contextual de cambio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "nodeGroups": [],
+  "pinData": {}
+}

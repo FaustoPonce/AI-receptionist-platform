@@ -1,0 +1,958 @@
+{
+  "name": "AI receptionist — Coordinar conversación",
+  "description": "Clasifica mensajes entrantes y prepara la siguiente ruta sin ejecutar acciones externas.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "35017923-9b4d-41c1-bdbf-e1875a5c24e0",
+      "name": "Manual — Probar coordinador",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "51e30fcb-f0b5-41b8-9d72-8761c8ac571a",
+      "name": "Cuando lo ejecuta otro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -980,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "204d8851-aec7-459c-8dfb-59383f393e90",
+      "name": "Datos — Mensaje de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -760,
+        120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "812bef14-f4b2-473b-a743-89d0d6c6c546",
+              "name": "messageId",
+              "value": "manual_test_message_001",
+              "type": "string"
+            },
+            {
+              "id": "a3305489-ac77-4e4d-9a58-d9ea77c27b61",
+              "name": "from",
+              "value": "<WHATSAPP_PHONE_NUMBER>",
+              "type": "string"
+            },
+            {
+              "id": "18ea168f-6bb2-4097-aa2f-4b5ba6c0291f",
+              "name": "contactName",
+              "value": "Contacto de prueba",
+              "type": "string"
+            },
+            {
+              "id": "254fa33b-036d-441d-8d9a-8e0c44b77e33",
+              "name": "messageText",
+              "value": "¿Qué servicios ofrece la consultora?",
+              "type": "string"
+            },
+            {
+              "id": "a2ddcac5-57f4-4be0-977b-b62a01f34cf1",
+              "name": "receivedAt",
+              "value": "={{ $now.toUTC().toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "fd7c0cda-b3fc-49ed-979a-33ef1be3c95e",
+              "name": "phoneNumberId",
+              "value": "<WHATSAPP_PHONE_NUMBER>",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "8af6a21a-81ff-4001-8a2a-a92a63b9c939",
+      "name": "Lógica — Validar entrada conversacional",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        210
+      ],
+      "parameters": {
+        "jsCode": "const messageId=String($json.messageId??'').trim();\nconst from=String($json.from??'').replace(/[^0-9]/g,'');\nconst contactName=String($json.contactName??'').trim();\nconst messageText=String($json.messageText??'').trim();\nconst receivedAt=String($json.receivedAt??'').trim();\nconst phoneNumberId=String($json.phoneNumberId??'').trim();\nconst errors=[];\nif(messageId.length<1||messageId.length>256) errors.push('messageId inválido.');\nif(!/^\\d{7,15}$/.test(from)) errors.push('from debe incluir código de país y tener entre 7 y 15 dígitos.');\nif(contactName.length>160) errors.push('contactName supera 160 caracteres.');\nif(messageText.length<1||messageText.length>1000) errors.push('messageText debe tener entre 1 y 1000 caracteres.');\nif(Number.isNaN(Date.parse(receivedAt))) errors.push('receivedAt debe ser una fecha ISO válida.');\nif(!/^\\d{1,20}$/.test(phoneNumberId)) errors.push('phoneNumberId inválido.');\nreturn [{json:{messageId,from,contactName,messageText,receivedAt,phoneNumberId,input_route:errors.length===0?'classify':'human_review',validationErrors:errors}}];"
+      }
+    },
+    {
+      "id": "9f3a8c2d-1817-45ca-9c04-d8089f79fa17",
+      "name": "Lógica — ¿Entrada válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -290,
+        210
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.input_route }}",
+              "rightValue": "classify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1ca7322a-4629-46db-a5b3-b942a85657be",
+      "name": "Ollama — Clasificar intención",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -50,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://<OLLAMA_HOST>:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'qwen3.5:9b', stream: false, think: false, options: { temperature: 0 }, format: { type: 'object', properties: { intent: { type: 'string', enum: ['knowledge_question','booking_request','booking_confirmation','clarification'] }, needsHumanReview: { type: 'boolean' } }, required: ['intent','needsHumanReview'], additionalProperties: false }, messages: [ { role: 'system', content: 'Clasificá únicamente la intención del último mensaje recibido por una consultora. No respondas al cliente, no inventes información, no propongas horarios y no realices acciones. knowledge_question: consulta de información. booking_request: pide coordinar, agendar o reservar. booking_confirmation: confirma de forma explícita una oferta recibida. clarification: saludo, mensaje ambiguo, fuera de alcance o sin una intención segura. needsHumanReview debe ser true ante duda, información sensible, urgencia o si la clasificación no es segura. Respondé solo el JSON del schema.' }, { role: 'user', content: $json.messageText } ] } }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "7a5cfeb2-f596-4b47-aebc-1e4a668a4eba",
+      "name": "Lógica — Validar clasificación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        190,
+        120
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar entrada conversacional').first().json;\nconst raw=String($json.message?.content??'').trim();\nlet parsed;\ntry { parsed=JSON.parse(raw); } catch { parsed=null; }\nconst intents=new Set(['knowledge_question','booking_request','booking_confirmation','clarification']);\nconst valid=parsed&&typeof parsed==='object'&&intents.has(parsed.intent)&&typeof parsed.needsHumanReview==='boolean';\nif(!valid) {\n  return [{json:{...source,outcome:'human_review',classificationStatus:'invalid_model_output',human_review_required:true,next_action:'Revisar la salida inválida del clasificador antes de responder.',automationEligible:false}}];\n}\nreturn [{json:{...source,intent:parsed.intent,needsHumanReview:parsed.needsHumanReview,classificationStatus:'accepted',classification_route:parsed.needsHumanReview?'human_review':parsed.intent,automationEligible:false}}];"
+      }
+    },
+    {
+      "id": "73c86d43-c703-417b-8daa-b75adfe6cf13",
+      "name": "Operación — Preparar siguiente paso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        430,
+        120
+      ],
+      "parameters": {
+        "jsCode": "if($json.outcome==='human_review') return [{json:{...$json,route:'human_review',automationEligible:false}}];\nconst nextActions={\nknowledge_question:'Consultar conocimiento documentado y preparar una respuesta con evidencia.',\nbooking_request:'Pedir o interpretar datos de agenda antes de consultar disponibilidad.',\nbooking_confirmation:'Validar una oferta vigente antes de reservar una reunión.',\nclarification:'Pedir una aclaración breve antes de continuar.',\nhuman_review:'Derivar el mensaje a revisión humana antes de responder.'\n};\nconst route=$json.classification_route||'human_review';\nreturn [{json:{...$json,outcome:'classification_ready',route,next_action:nextActions[route]||nextActions.human_review,automationEligible:false}}];"
+      }
+    },
+    {
+      "id": "3f32b50c-e49a-4396-b55b-f9f462ce910d",
+      "name": "Revisión humana — Entrada inválida",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -40,
+        330
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c9790777-f36f-4890-880e-289c8f48b219",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "587b0c09-536a-4945-be57-7f4e94dc1a59",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "77531ed7-33e7-48ff-813c-44d23a0ed155",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar los datos de entrada del mensaje.",
+              "type": "string"
+            },
+            {
+              "id": "008b09f8-f5db-468b-9f19-25e6a91ed14d",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "498a0e5d-7608-483c-ab5e-0e68de21e50c",
+      "name": "Revisión humana — Fallo del clasificador",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        190,
+        330
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4f169ef8-9626-4ac1-b4bf-35c75358fd13",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "036362d7-cdb4-4aa7-a646-e01a025bd4d6",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "9f215586-6a36-46fd-84d1-c8ae084ca2c6",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar disponibilidad y respuesta de Ollama.",
+              "type": "string"
+            },
+            {
+              "id": "c95a2d44-3acc-4dc3-ab2d-4b798d91962d",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "0127ca2a-5161-4074-bdf8-b3df050d462c",
+      "name": "Nota — Alcance del borrador",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        300,
+        -100
+      ],
+      "parameters": {
+        "width": 430,
+        "height": 120,
+        "content": "Este borrador solo clasifica el mensaje. No está conectado al receptor de WhatsApp y no ejecuta envíos, CRM ni reservas."
+      }
+    },
+    {
+      "id": "289179c6-2680-4c5f-97ac-cb5eb940fc01",
+      "name": "Lógica — ¿Consulta de conocimiento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "knowledge_question",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9bc2d70f-d41a-41e1-87ee-dc455a549d01",
+      "name": "Datos — Preparar consulta de conocimiento",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        650,
+        70
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "054b095a-088c-4a14-918c-85b88823f050",
+              "name": "question",
+              "value": "={{ $json.messageText }}",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "cc7b793c-7d42-4e2b-9ea0-5480865d6f3b",
+      "name": "Conocimiento — Responder con evidencia",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        890,
+        70
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Consultar conocimiento"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "49160b1c-7cf7-4ec5-925a-1803af28de88",
+      "name": "Lógica — Validar respuesta respaldada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1130,
+        70
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar clasificación').first().json;\nconst responseDraft=String($json.output??'').trim();\nif(responseDraft.length<1||responseDraft.length>2000) {\n  return [{json:{...source,outcome:'human_review',human_review_required:true,knowledgeStatus:'invalid_or_missing_answer',next_action:'Revisar la respuesta de conocimiento antes de enviar cualquier mensaje.',automationEligible:false}}];\n}\nreturn [{json:{...source,outcome:'knowledge_answer_ready',route:'knowledge_question',knowledgeStatus:'validated',responseDraft,next_action:'Revisar la respuesta respaldada antes de conectarla al envío de WhatsApp.',automationEligible:false}}];"
+      }
+    },
+    {
+      "id": "cc5c2437-a71d-4a78-9f63-b4b82828e3f5",
+      "name": "Revisión humana — Fallo de conocimiento",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1130,
+        280
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4adddaa7-7061-45fe-bb8d-5ca7c73a59b8",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "194f3258-0fe2-4f9b-a77b-47f49710a8e0",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "3a4898dd-8b1b-4bb3-8e5f-318f5cc8f39a",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar el fallo de consulta de conocimiento.",
+              "type": "string"
+            },
+            {
+              "id": "4663c098-e7d0-4c54-9eaf-f41b35661a82",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "73842ccd-fa2e-4dcf-8f72-cddf8d2cf4aa",
+      "name": "Lógica — ¿Solicitud de reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "booking_request",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e9f379c3-7580-4898-9211-2e2549aae8a9",
+      "name": "Lógica — Extraer horario de reunión",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        160
+      ],
+      "parameters": {
+        "jsCode": "const source=$json;\nconst text=String(source.messageText??'').trim();\nconst match=text.match(/(?:^|\\s)(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})\\s+(?:a\\s+las\\s+)?([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)/i);\nif(!match) return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'Para revisar disponibilidad, decime un horario de 30 minutos como DD/MM/AAAA HH:MM. Ejemplo: 24/09/2026 15:00.',automationEligible:true}}];\nconst [,day,month,year,hour,minute]=match;\nconst check=new Date(Date.UTC(Number(year),Number(month)-1,Number(day)));\nif(check.getUTCFullYear()!==Number(year)||check.getUTCMonth()!==Number(month)-1||check.getUTCDate()!==Number(day)) return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'La fecha no es válida. Indicame un horario de 30 minutos como DD/MM/AAAA HH:MM.',automationEligible:true}}];\nconst start=new Date(`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}T${hour.padStart(2,'0')}:${minute}:00-03:00`);\nconst end=new Date(start.getTime()+30*60*1000);\nif(start.getTime()<=Date.now()) return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'Necesito una fecha y horario futuros para revisar disponibilidad.',automationEligible:true}}];\nreturn [{json:{...source,booking_route:'offer',requestedStart:start.toISOString(),requestedEnd:end.toISOString(),requestedSlotLabel:`${day.padStart(2,'0')}/${month.padStart(2,'0')}/${year} ${hour.padStart(2,'0')}:${minute}`,calendarId:'faustoponceb@gmail.com',timezone:'America/Argentina/Buenos_Aires',offerExpiresAt:new Date(Date.now()+15*60*1000).toISOString()}}];"
+      }
+    },
+    {
+      "id": "06cc0d28-b2e4-4dfc-96ea-f487be022218",
+      "name": "Lógica — ¿Horario de reunión completo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.booking_route }}",
+              "rightValue": "offer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ca82ccc2-734a-4861-ac80-4f73cfdb9e03",
+      "name": "Agenda — Generar oferta temporal",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1840,
+        80
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Generar oferta de agenda"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b35308a9-a815-4efe-883a-9ef78ede600c",
+      "name": "Lógica — Preparar respuesta de agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Extraer horario de reunión').first().json;\nconst outcome=String($json.outcome??source.outcome??'');\nif(outcome==='booking_clarification_ready') return [{json:source}];\nif(outcome==='booking_offer_created') return [{json:{...source,outcome:'booking_offer_ready',route:'booking_request',responseDraft:`Tengo disponible el ${source.requestedSlotLabel} para una reunión de 30 minutos. La propuesta vence en 15 minutos. Respondé CONFIRMAR ${String($json.offerToken)} para continuar.`,automationEligible:true}}];\nif(outcome==='slot_unavailable'||outcome==='slot_already_offered') return [{json:{...source,outcome:'booking_slot_unavailable',route:'booking_request',responseDraft:'Ese horario no está disponible. Indicame otra fecha y hora en formato DD/MM/AAAA HH:MM.',automationEligible:true}}];\nreturn [{json:{...source,outcome:'human_review',human_review_required:true,next_action:'Revisar el resultado de la oferta antes de responder.',automationEligible:false}}];"
+      }
+    },
+    {
+      "id": "0956d50e-89bf-4a02-acd2-286487c2af62",
+      "name": "Revisión humana — Fallo de agenda",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2080,
+        240
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "369d299d-7875-446c-b169-4c678d0cdb71",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "1e474ea9-57a7-4bbd-a5b8-29d6cdb7b304",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ac7a6b56-186f-433e-906b-ece44cf4bef0",
+              "name": "next_action",
+              "value": "Revisar el fallo al generar una oferta de agenda.",
+              "type": "string"
+            },
+            {
+              "id": "f63ff84f-465a-49f6-94ef-3578367b919b",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "booking_confirmation",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6e106c4f-2204-4733-8679-496994b44499",
+      "name": "Lógica — ¿Confirmación de reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1030,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$input.first().json;\nconst text=typeof source.messageText==='string'?source.messageText.trim():'';\nconst match=text.match(/^\\s*confirmar\\s+(offer_[A-Za-z0-9_-]{16,128})\\s*[.!?]*\\s*$/i);\nif(!match) return [{json:{...source,confirmation_route:'clarify',outcome:'booking_confirmation_clarification_ready',responseDraft:'Para confirmar la reunión, respondé CONFIRMAR seguido del código de la propuesta vigente.',automationEligible:true}}];\nreturn [{json:{...source,confirmation_route:'reserve',confirmationText:text,confirmationToken:match[1],meetingTitle:'Reunión — Consultora demo',meetingDescription:'Reserva confirmada explícitamente por el contacto.',automationEligible:true}}];"
+      },
+      "id": "09276588-27da-46d5-ad8d-e4e5a29e4627",
+      "name": "Lógica — Extraer confirmación de oferta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.confirmation_route }}",
+              "rightValue": "reserve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ad6ffc14-cc4c-42ca-8319-a17b65e5ba5a",
+      "name": "Lógica — ¿Código de confirmación válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1470,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Confirmar y reservar reunión"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "abb3ecf0-9fa5-44bf-8251-4cd17b372441",
+      "name": "Agenda — Confirmar y reservar reunión",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1690,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Extraer confirmación de oferta').first().json;\nconst outcome=String($json.outcome??source.outcome??'');\nif(outcome==='booking_confirmation_clarification_ready') return [{json:source}];\nif(outcome==='meeting_created') return [{json:{...source,outcome:'booking_reservation_ready',route:'booking_confirmation',responseDraft:'Tu reunión quedó confirmada. Te esperamos en el horario acordado.',automationEligible:true}}];\nif(outcome==='booking_offer_unavailable') return [{json:{...source,outcome:'booking_confirmation_unavailable',route:'booking_confirmation',responseDraft:'La propuesta ya no está disponible. Indicame otra fecha y hora para buscar una alternativa.',automationEligible:true}}];\nreturn [{json:{...source,outcome:'human_review',human_review_required:true,next_action:'Revisar el resultado de la confirmación antes de responder.',automationEligible:false}}];"
+      },
+      "id": "f7a35137-2c6c-43b7-b8c4-7c65f4bc8416",
+      "name": "Lógica — Preparar respuesta de reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1910,
+        40
+      ]
+    }
+  ],
+  "connections": {
+    "Manual — Probar coordinador": {
+      "main": [
+        [
+          {
+            "node": "Datos — Mensaje de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Mensaje de prueba": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar entrada conversacional",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta otro workflow": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar entrada conversacional",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar entrada conversacional": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Entrada válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Entrada válida?": {
+      "main": [
+        [
+          {
+            "node": "Ollama — Clasificar intención",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Entrada inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama — Clasificar intención": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar clasificación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo del clasificador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar clasificación": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Solicitud de reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Consulta de conocimiento?": {
+      "main": [
+        [
+          {
+            "node": "Datos — Preparar consulta de conocimiento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Operación — Preparar siguiente paso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Preparar consulta de conocimiento": {
+      "main": [
+        [
+          {
+            "node": "Conocimiento — Responder con evidencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conocimiento — Responder con evidencia": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar respuesta respaldada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de conocimiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Solicitud de reunión?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer horario de reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Confirmación de reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Extraer horario de reunión": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Horario de reunión completo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Horario de reunión completo?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Generar oferta temporal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar respuesta de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Generar oferta temporal": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar respuesta de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Confirmación de reunión?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer confirmación de oferta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Consulta de conocimiento?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Extraer confirmación de oferta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Código de confirmación válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Código de confirmación válido?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Confirmar y reservar reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar respuesta de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Confirmar y reservar reunión": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar respuesta de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "nodeGroups": [],
+  "pinData": {}
+}

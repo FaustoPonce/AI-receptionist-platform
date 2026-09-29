@@ -1,0 +1,1044 @@
+{
+  "name": "AI receptionist — Confirmar y reservar reunión",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "682b25da-c2ff-47b5-a26b-74dd2321897d",
+      "name": "Manual — Probar reserva",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0e77368a-912d-4883-bbd9-8de4f386df61",
+              "name": "confirmationText",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "93b97b7c-0edf-4d0d-82d3-5174a6cd6f69",
+              "name": "confirmationToken",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a8bb6cc9-2a05-4162-af0d-e75b00a4fabd",
+              "name": "offerStatus",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "fb88c2a4-0ed5-4dc0-a2ce-84ebc7af250b",
+              "name": "requestedStart",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a37cf8fb-7342-4f62-b179-0fa4b6df03bc",
+              "name": "requestedEnd",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "54eeaa25-e480-4e54-9afd-3a011aa0eff5",
+              "name": "timezone",
+              "value": "America/Argentina/Buenos_Aires",
+              "type": "string"
+            },
+            {
+              "id": "4571d7bd-9736-4596-b385-1f112aee3237",
+              "name": "calendarId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "db97a390-36e8-41bb-8edc-1f8454f93c2d",
+              "name": "meetingTitle",
+              "value": "Reunión — Consultora demo",
+              "type": "string"
+            },
+            {
+              "id": "f58a8856-d106-44fb-ba21-b502af7a1c8d",
+              "name": "meetingDescription",
+              "value": "Reserva confirmada explícitamente por el contacto.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "550654ab-4e9e-4178-8a83-0a1994ca4f7f",
+      "name": "Datos — Reserva de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$input.first().json;\nconst confirmationText=typeof input.confirmationText==='string'?input.confirmationText.trim():'';\nconst suppliedToken=typeof input.confirmationToken==='string'?input.confirmationToken.trim():'';\nconst match=confirmationText.match(/^\\s*confirmar\\s+(offer_[A-Za-z0-9_-]{16,128})\\s*[.!?]*\\s*$/i);\nconst token=match?match[1]:suppliedToken;\nconst valid=Boolean(match)&&token===match[1]&&/^offer_[A-Za-z0-9_-]{16,128}$/.test(token);\nreturn [{json:{...input,confirmationText,confirmationToken:token,booking_route:valid?'lookup_offer':'human_review',validation_message:valid?'Confirmación explícita válida; se verificará la oferta operativa.':'La reserva requiere el texto CONFIRMAR seguido del código de la propuesta vigente.'}}];"
+      },
+      "id": "a140471a-c02b-47e1-bbfb-8d943c9446cb",
+      "name": "Lógica — Validar confirmación explícita",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.booking_route }}",
+              "rightValue": "lookup_offer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f2b64529-d0ea-48b1-b7f9-1c211111d9f5",
+      "name": "Lógica — ¿Puede crear reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Lógica — Validar oferta vigente').first().json.calendarId }}"
+        },
+        "start": "={{ $('Lógica — Validar oferta vigente').first().json.requestedStart }}",
+        "end": "={{ $('Lógica — Validar oferta vigente').first().json.requestedEnd }}",
+        "additionalFields": {
+          "description": "={{ $('Lógica — Validar oferta vigente').first().json.meetingDescription }}",
+          "guestsCanInviteOthers": false,
+          "guestsCanModify": false,
+          "guestsCanSeeOtherGuests": false,
+          "sendUpdates": "none",
+          "summary": "={{ $('Lógica — Validar oferta vigente').first().json.meetingTitle }}"
+        }
+      },
+      "id": "0fccc670-c121-426c-ba81-3fa7b6296f9f",
+      "name": "Google Calendar — Crear reunión",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        2624,
+        160
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c5b6d567-4806-4030-9f6e-2e04c597aa03",
+              "name": "outcome",
+              "value": "meeting_created",
+              "type": "string"
+            },
+            {
+              "id": "f3d7f915-10de-41e2-afdb-d06d3a4f4baa",
+              "name": "meeting_duration_minutes",
+              "value": 30,
+              "type": "number"
+            },
+            {
+              "id": "1da1b4ff-7927-4b5f-855d-3da64a6a83b6",
+              "name": "timezone",
+              "value": "America/Argentina/Buenos_Aires",
+              "type": "string"
+            },
+            {
+              "id": "87da91fe-9f8e-4312-b3ad-343676ded01a",
+              "name": "next_action",
+              "value": "Registrar la interacción comercial antes de responder al contacto.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "96bd1c50-4ac1-431c-93ba-829e2aa0f529",
+      "name": "Lógica — Preparar reserva creada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3440,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5f87d443-ff9c-4035-a61e-64cf12c86dee",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "9c8743fe-e492-49ea-b824-168db4cf4370",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "d29bdf18-1d68-49e5-b5c0-c8c13de0c11f",
+              "name": "reply_template",
+              "value": "Para reservar ese horario necesito tu confirmación explícita.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "97cea104-e2e6-44c5-8e65-bb68847131ee",
+      "name": "Revisión humana — Confirmación insuficiente",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1088,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$input.first().json,m=typeof s.error==='string'?s.error:typeof s.error?.message==='string'?s.error.message:'Error sin detalle',f=/fetch failed|econnrefused|etimedout|timeout|network|socket|rate limit|status code 5\\d\\d|service unavailable/i.test(m)?'transient':'human_review';return [{json:{failure_route:f,failure_message:m,human_review_required:f==='human_review'}}];"
+      },
+      "id": "e0b4bf8e-3ed8-4aa3-82b7-1fd48397ef35",
+      "name": "Lógica — Clasificar fallo de reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.failure_route }}",
+              "rightValue": "transient",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "106a3c78-7555-4898-af1d-491108fdc146",
+      "name": "Lógica — ¿Fallo transitorio de reserva?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3648,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8593d034-8733-411c-bcdb-253d66a99be8",
+              "name": "outcome",
+              "value": "transient_failure",
+              "type": "string"
+            },
+            {
+              "id": "20d01e45-3d81-49fc-a62d-0e5ba578665a",
+              "name": "retry_recommended",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "2e13646a-cab7-4b83-92cd-d20ff90959f0",
+              "name": "next_action",
+              "value": "Reintentar de forma controlada sin duplicar la reunión.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "d028f26e-4b18-4c77-a843-3b9879c7bcd3",
+      "name": "Operación — Preparar reintento de reserva",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3904,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8cd66f79-7a4e-40f4-bb01-01ba777e10ff",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "72677f00-5081-44e2-84d6-fcc5518dc76a",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "afb54e33-4563-4d6e-8309-af623d7abb28",
+              "name": "reply_template",
+              "value": "Necesito revisar la reserva antes de confirmarla.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "297869ff-24c0-4667-811c-ee9a37d903fe",
+      "name": "Revisión humana — Fallo de reserva",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3904,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Workflow inactivo: no ejecutar con datos reales todavía.\\n\\nAntes de activarlo, el token de oferta debe validarse y consumirse de forma atómica en una Data Table para impedir reservas duplicadas. Luego se registra el resultado en HubSpot.\\n\\nSólo el camino con confirmación explícita puede llegar a Google Calendar.",
+        "height": 180,
+        "width": 720
+      },
+      "id": "8393ebe4-7883-49ab-b5ba-97a9d76ec9b1",
+      "name": "Nota — Condición antes de activar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        992,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "offerToken",
+              "keyValue": "={{ $('Lógica — Validar confirmación explícita').first().json.confirmationToken }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "2ecf21ec-68ee-49e3-9f51-7d08753d2ccc",
+      "name": "Data Tables — Buscar oferta vigente",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        224
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request=$('Lógica — Validar confirmación explícita').first().json;\nconst offer=$input.first().json;\nconst text=value=>typeof value==='string'?value.trim():'';\nconst expiration=new Date(text(offer.expiresAt));\nconst valid=text(offer.offerToken)===text(request.confirmationToken)&&text(offer.status)==='offered'&&text(offer.calendarId)!==''&&text(offer.slotStart)!==''&&text(offer.slotEnd)!==''&&text(offer.timezone)==='America/Argentina/Buenos_Aires'&&!Number.isNaN(expiration.getTime())&&expiration.getTime()>Date.now();\nreturn [{json:{...request,requestedStart:valid?text(offer.slotStart):'',requestedEnd:valid?text(offer.slotEnd):'',calendarId:valid?text(offer.calendarId):'',timezone:valid?'America/Argentina/Buenos_Aires':'',meetingTitle:valid?'Reunión — Consultora demo':'',meetingDescription:valid?'Reserva confirmada explícitamente por el contacto.':'',offer_route:valid?'consume':'human_review',offer_validation_message:valid?'Oferta vigente y coincidente.':'La oferta no existe, venció o ya fue utilizada.'}}];"
+      },
+      "id": "b8ef3a54-e6f8-4981-9f89-f77615cdb2ea",
+      "name": "Lógica — Validar oferta vigente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.offer_route }}",
+              "rightValue": "consume",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f4a3074-b482-4357-8de3-bde2dc8be2d9",
+      "name": "Lógica — ¿Oferta consumible?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "offerToken",
+              "keyValue": "={{ $('Lógica — Validar oferta vigente').first().json.confirmationToken }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "offered"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "consumed_pending",
+            "consumedAt": "={{ $now.toUTC().toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "consumedAt",
+              "displayName": "consumedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "4176824d-f600-4715-a57d-fc9d75d3877b",
+      "name": "Data Tables — Consumir oferta",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1872,
+        160
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request=$('Lógica — Validar oferta vigente').first().json;\nconst updated=$input.first().json;\nconst valid=updated.offerToken===request.confirmationToken&&updated.status==='consumed_pending';\nreturn [{json:{...request,consumption_route:valid?'create':'human_review',consumption_message:valid?'Oferta consumida de forma única.':'No se pudo consumir la oferta de forma única.'}}];"
+      },
+      "id": "7e86a6c7-9c17-4df3-9fda-40baeb03463f",
+      "name": "Lógica — Verificar consumo de oferta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.consumption_route }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a90797a9-f669-4088-b9eb-6d4b9043a65f",
+      "name": "Lógica — ¿Consumo confirmado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2384,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "15a9490b-21d5-4cbc-874f-a9ad8825fba2",
+              "name": "outcome",
+              "value": "booking_offer_unavailable",
+              "type": "string"
+            },
+            {
+              "id": "1decfe3d-5f2f-4b00-9e20-dc086bffda53",
+              "name": "human_review_required",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "0a3439db-c4c2-4f43-bf85-1124019b5d0a",
+              "name": "reply_template",
+              "value": "La propuesta ya no está disponible. Indicame otra fecha y hora para buscar una alternativa.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "9b1bc78b-ed5a-48ba-a318-b476466259af",
+      "name": "Revisión humana — Oferta no disponible",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1872,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "offerToken",
+              "keyValue": "={{ $('Lógica — Validar confirmación explícita').first().json.confirmationToken }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "consumed_pending"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "reserved",
+            "reservationEventId": "={{ $('Google Calendar — Crear reunión').first().json.id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reservationEventId",
+              "displayName": "reservationEventId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "ddb7fc32-4caa-4604-b6bf-ca0e6f4f6673",
+      "name": "Data Tables — Registrar reserva creada",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2864,
+        160
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const row=$input.first().json;\nconst expected=$('Lógica — Validar confirmación explícita').first().json;\nconst valid=row.offerToken===expected.confirmationToken&&row.status==='reserved'&&typeof row.reservationEventId==='string'&&row.reservationEventId.length>0;\nreturn [{json:{...expected,registration_route:valid?'success':'human_review',registration_message:valid?'Reserva registrada.':'La reunión se creó, pero su registro operativo requiere revisión humana.'}}];"
+      },
+      "id": "82c2a257-7ce5-4c26-b09e-9dde5b57bb2f",
+      "name": "Lógica — Verificar registro de reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.registration_route }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "70b03b0f-d0ec-4a5a-a693-cf2b8d8da2f1",
+      "name": "Lógica — ¿Reserva registrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3264,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "2e3de41a-a3c1-41aa-93a2-5997aa79b817",
+      "name": "Cuando lo ejecuta otro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        -760,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar oferta vigente').first().json;\nconst fullName=typeof source.contactName==='string'?source.contactName.trim():'';\nconst phone=typeof source.from==='string'?source.from:'';\nconst start=typeof source.requestedStart==='string'?source.requestedStart:'';\nconst token=typeof source.confirmationToken==='string'?source.confirmationToken:'';\nreturn [{json:{fullName,phone,message:`Reserva confirmada para ${start}.`,interactionKey:`booking:${token}`,receivedAt:source.receivedAt,source:'whatsapp'}}];"
+      },
+      "id": "3cffc73f-57e5-49b4-8b83-3390c295f78c",
+      "name": "Operación — Preparar interacción CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3100,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Registrar interacción comercial"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "62aada53-a73c-4a4a-91fb-eafeaf7a2fea",
+      "name": "CRM — Registrar interacción comercial",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3320,
+        60
+      ],
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Manual — Probar reserva": {
+      "main": [
+        [
+          {
+            "node": "Datos — Reserva de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Reserva de prueba": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar confirmación explícita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar confirmación explícita": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Puede crear reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Puede crear reunión?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar oferta vigente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Confirmación insuficiente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar — Crear reunión": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Registrar reserva creada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Clasificar fallo de reserva": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Fallo transitorio de reserva?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Fallo transitorio de reserva?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar reintento de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar oferta vigente": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar oferta vigente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar oferta vigente": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Oferta consumible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Oferta consumible?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Consumir oferta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Oferta no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Consumir oferta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Verificar consumo de oferta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Verificar consumo de oferta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Consumo confirmado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Consumo confirmado?": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar — Crear reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Oferta no disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Registrar reserva creada": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Verificar registro de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Verificar registro de reserva": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Reserva registrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Reserva registrada?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar interacción CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta otro workflow": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar confirmación explícita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operación — Preparar interacción CRM": {
+      "main": [
+        [
+          {
+            "node": "CRM — Registrar interacción comercial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM — Registrar interacción comercial": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar reserva creada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar reserva creada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "pinData": {}
+}

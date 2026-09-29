@@ -1,0 +1,1054 @@
+{
+  "name": "AI receptionist — Recibir mensajes de WhatsApp",
+  "description": "Recepción y validación de webhooks de WhatsApp Cloud API.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "900f175e-239d-484a-b163-d487d25960ad",
+      "name": "Webhook — Verificar Meta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1200,
+        -140
+      ],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "e877ef36-2fa9-42d2-b595-4e725039861d",
+      "name": "Lógica — Validar desafío Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        -140
+      ],
+      "parameters": {
+        "jsCode": "const query=$json.query||{};\nconst mode=query['hub.mode']||'';\nconst verifyToken=query['hub.verify_token']||'';\nconst challenge=query['hub.challenge']||'';\nconst valid=mode==='subscribe'&&typeof challenge==='string'&&verifyToken===$env.META_WEBHOOK_VERIFY_TOKEN;\nreturn [{json:{challenge,verification_route:valid?'accept':'reject'}}];"
+      }
+    },
+    {
+      "id": "8dba199f-08a9-405b-9327-50398c7b7c75",
+      "name": "Lógica — ¿Desafío válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -760,
+        -140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.verification_route }}",
+              "rightValue": "accept",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4f3d7df9-f0f5-427a-a503-009e43515c83",
+      "name": "Respuesta — Devolver desafío Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -540,
+        -200
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": {
+          "responseCode": 200,
+          "enableStreaming": false
+        }
+      }
+    },
+    {
+      "id": "52f3f2d1-42d6-417e-963d-74f79ddf2a99",
+      "name": "Respuesta — Rechazar desafío Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -540,
+        -80
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Forbidden",
+        "options": {
+          "responseCode": 403,
+          "enableStreaming": false
+        }
+      }
+    },
+    {
+      "id": "c2f35764-dc61-4934-a241-d79f39e6420c",
+      "name": "Webhook — Recibir evento Meta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1200,
+        180
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "81b44bc3-0580-4d12-b7d7-5c71f9bd6b73",
+      "name": "Lógica — Validar firma Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const crypto=require('crypto');\nconst input=items[0]||{};\nconst payload=input.json||{};\nconst headers=payload.headers||{};\nconst supplied=headers['x-hub-signature-256']||headers['X-Hub-Signature-256']||'';\nconst encodedRaw=input.binary?.data?.data;\nconst rawText=typeof encodedRaw==='string'?Buffer.from(encodedRaw,'base64').toString('utf8'):null;\nconst expected=rawText===null?'':'sha256='+crypto.createHmac('sha256',$env.META_APP_SECRET).update(rawText).digest('hex');\nconst valid=rawText!==null&&typeof supplied==='string'&&supplied.length===expected.length&&crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));\nreturn [{json:{...payload,signature_route:valid?'parse':'human_review'},binary:input.binary}];"
+      }
+    },
+    {
+      "id": "84161e90-83cb-4ab2-b1d5-91a76877e30f",
+      "name": "Lógica — ¿Firma válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -760,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.signature_route }}",
+              "rightValue": "parse",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7eb59859-ddfb-4791-aefe-83bb844e69b7",
+      "name": "Lógica — Extraer mensaje entrante",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        120
+      ],
+      "parameters": {
+        "jsCode": "const value=$json.body?.entry?.[0]?.changes?.[0]?.value||{};\nconst message=value.messages?.[0];\nconst contact=value.contacts?.[0]||{};\nconst metadata=value.metadata||{};\nif(!message||message.type!=='text'||typeof message.id!=='string'||typeof message.from!=='string'||typeof message.text?.body!=='string'){\n return [{json:{event_route:'ignore',reason:'El evento no contiene un mensaje de texto entrante procesable.'}}];\n}\nreturn [{json:{event_route:'process',channel:'whatsapp',messageId:message.id,from:message.from,contactName:typeof contact.profile?.name==='string'?contact.profile.name:'',messageText:message.text.body,receivedAt:new Date(Number(message.timestamp)*1000).toISOString(),phoneNumberId:metadata.phone_number_id||''}}];"
+      }
+    },
+    {
+      "id": "bae1e65f-075a-48d2-943e-913a37093e50",
+      "name": "Lógica — ¿Mensaje procesable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.event_route }}",
+              "rightValue": "process",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "98e622d7-dd09-41a0-b00f-326b04860bee",
+      "name": "Operación — Preparar mensaje recibido",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -100,
+        60
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5abbef6e-8f59-418c-a7d2-6254d714cda5",
+              "name": "outcome",
+              "value": "message_received",
+              "type": "string"
+            },
+            {
+              "id": "0726a030-1b13-4fee-84ec-6056c6013fbe",
+              "name": "next_action",
+              "value": "Validar idempotencia y enrutar al coordinador conversacional antes de responder.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {},
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "a50ed0b8-b62b-4c80-abf0-b277e6370612",
+      "name": "Operación — Ignorar evento no procesable",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -100,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "607dbee1-2122-4de2-8f87-4a716709a00f",
+              "name": "outcome",
+              "value": "ignored_event",
+              "type": "string"
+            },
+            {
+              "id": "a7b9fbc3-8b24-47fd-9aa3-feb237b87254",
+              "name": "next_action",
+              "value": "No responder; el evento no era un mensaje de texto entrante.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d07c2f15-c855-4266-af4d-9a2d7ff19127",
+      "name": "Revisión humana — Firma inválida",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -540,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "70d3eec9-2904-4abd-a047-c3b0ea3b7c77",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "d16f7b7e-d65b-40cc-8298-f1b9a376d793",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6c13dc91-5ba7-40be-a71c-2e4138e04c5a",
+              "name": "next_action",
+              "value": "No procesar el evento; revisar firma de Meta y configuración local.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "dab5da97-5600-4cf9-a525-2f617c654702",
+      "name": "Nota — Condición antes de activar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        430
+      ],
+      "parameters": {
+        "content": "El receptor valida el desafío y la firma de Meta, deduplica el mensaje y solo envía una respuesta cuando el coordinador devuelve conocimiento respaldado. Los otros casos quedan para revisión humana; no se responde con contenido no validado.",
+        "width": 740,
+        "height": 150
+      }
+    },
+    {
+      "id": "9f098221-281a-4c2f-9f33-46d05be7216b",
+      "name": "Data Tables — Verificar mensaje nuevo",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        40
+      ],
+      "parameters": {
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "messageId",
+              "keyValue": "={{ $('Lógica — Extraer mensaje entrante').first().json.messageId }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b6964a59-a8b0-428c-a107-4095caef289c",
+      "name": "Operación — Preparar mensaje para coordinador",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1520,
+        40
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2f1078a6-ae65-4143-ba6a-<WHATSAPP_PHONE_NUMBER>c9",
+              "name": "messageId",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "5859f70f-c69b-477d-85df-982424d0e351",
+              "name": "from",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "0367d993-2fed-4dfb-aff6-f11794e72462",
+              "name": "contactName",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.contactName }}",
+              "type": "string"
+            },
+            {
+              "id": "d7a2993a-5459-42ee-9589-69edab78162e",
+              "name": "messageText",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.messageText }}",
+              "type": "string"
+            },
+            {
+              "id": "ba79a67d-cd84-4441-aece-aa4a1b28dfe7",
+              "name": "receivedAt",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.receivedAt }}",
+              "type": "string"
+            },
+            {
+              "id": "ea977b97-a3f0-4ace-b966-cdf7b6840a7a",
+              "name": "phoneNumberId",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.phoneNumberId }}",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "a557beda-2b54-4aaa-9fc6-1e9ad99797a4",
+      "name": "Meta WhatsApp — Enviar respuesta con evidencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v<API_VERSION>/<WHATSAPP_PHONE_NUMBER_ID>/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { messaging_product: 'whatsapp', to: $json.recipient, type: 'text', text: { body: $json.message } } }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "e7958836-ac73-4998-9be8-4abfff5b38d0",
+      "name": "Data Tables — Marcar respuesta aceptada",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2040,
+        -20
+      ],
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "messageId": "={{ $('Operación — Preparar respuesta WhatsApp').first().json.messageId }}",
+            "sourcePhone": "={{ $('Operación — Preparar respuesta WhatsApp').first().json.sourcePhone }}",
+            "receivedAt": "={{ $('Operación — Preparar respuesta WhatsApp').first().json.receivedAt }}",
+            "repliedAt": "={{ $now.toUTC().toISO() }}",
+            "status": "={{ $('Operación — Preparar respuesta WhatsApp').first().json.responseStatus }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "messageId",
+              "displayName": "messageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "sourcePhone",
+              "displayName": "sourcePhone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "receivedAt",
+              "displayName": "receivedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "repliedAt",
+              "displayName": "repliedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3f5eb535-738c-48a0-8fe1-e29d09a6c8ca",
+      "name": "Revisión humana — Fallo al responder",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2040,
+        160
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "08f9e201-2484-4538-8700-87e49e75feb1",
+              "name": "outcome",
+              "value": "whatsapp_reply_failed",
+              "type": "string"
+            },
+            {
+              "id": "ee4d00fb-8f80-46cd-ad2d-1d7a59670d43",
+              "name": "next_action",
+              "value": "Revisar el error de entrega; el mensaje no se marcó como procesado para permitir una recuperación controlada.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "ba2f6d78-d44f-44f2-9a3c-2f902605ed95",
+      "name": "Coordinador — Procesar mensaje",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1220,
+        300
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Coordinar conversación con cambios"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "2067370f-9caa-4ed9-9337-7519501b7aca",
+      "name": "Lógica — ¿Respuesta automática lista?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1450,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ['knowledge_answer_ready','booking_clarification_ready','booking_offer_ready','booking_slot_unavailable','booking_confirmation_clarification_ready','booking_reservation_ready','booking_cancellation_ready','booking_confirmation_unavailable','booking_cancellation_confirmation_ready','booking_reschedule_offer_ready','booking_change_selection_ready','booking_change_clarification_ready','booking_active_meetings_ready','conversation_clarification_ready','booking_day_options_ready'].includes($json.outcome) && typeof $json.responseDraft === 'string' && $json.responseDraft.trim().length > 0 }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "13be8628-9f1f-44b3-85d8-27ea10693cdc",
+      "name": "Operación — Preparar respuesta WhatsApp",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1690,
+        220
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b6b1a1ee-aad9-4adb-ab94-77184aa965da",
+              "name": "messageId",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "d5024b2f-36d9-47a4-bf38-7bb400932bd9",
+              "name": "sourcePhone",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "55377187-0a00-4551-a513-9f233b398a0a",
+              "name": "receivedAt",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.receivedAt }}",
+              "type": "string"
+            },
+            {
+              "id": "7efd4091-f4a6-410f-80d2-01588c13c092",
+              "name": "phoneNumberId",
+              "value": "={{ $('Lógica — Extraer mensaje entrante').first().json.phoneNumberId }}",
+              "type": "string"
+            },
+            {
+              "id": "682b55d1-0657-4ac9-812e-8aa0adef6eed",
+              "name": "recipient",
+              "value": "={{ (() => { const digits=String($('Lógica — Extraer mensaje entrante').first().json.from||'').replace(/\\D/g,''); return digits.startsWith('549') ? '54'+digits.slice(3) : digits; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "95f922b2-cc01-4ec6-8f48-ccd0fedebfbf",
+              "name": "message",
+              "value": "={{ $json.responseDraft }}",
+              "type": "string"
+            },
+            {
+              "id": "cc60e575-0879-4301-a1f0-63183ea8418b",
+              "name": "responseStatus",
+              "value": "={{ ({ knowledge_answer_ready:'knowledge_reply_accepted', booking_clarification_ready:'booking_clarification_accepted', booking_offer_ready:'booking_offer_accepted', booking_slot_unavailable:'booking_slot_unavailable_accepted', booking_confirmation_clarification_ready:'booking_confirmation_clarification_accepted', booking_reservation_ready:'booking_confirmation_accepted', booking_reschedule_offer_ready:'booking_reschedule_offer_accepted', booking_cancellation_confirmation_ready:'booking_cancellation_offer_accepted', booking_cancellation_ready:'booking_cancellation_accepted', booking_confirmation_unavailable:'booking_confirmation_unavailable_accepted', booking_change_selection_ready:'booking_change_selection_accepted', booking_change_clarification_ready:'booking_change_clarification_accepted', booking_active_meetings_ready:'booking_active_meetings_accepted' })[$json.outcome] || 'automatic_reply_accepted' }}",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "27851728-a0c0-43c8-918b-15e926215531",
+      "name": "Revisión humana — Sin respuesta automática",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1690,
+        430
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "74fdd7a1-e271-445c-8344-04c8101c88ae",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "223ec1b8-314b-4b60-a465-4d7a81515eaf",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "043edc0b-3393-4e67-a3dc-f945c62575fb",
+              "name": "next_action",
+              "value": "No enviar mensaje automático; revisar la intención o el fallo de conocimiento.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const message=String($json.message??'');\nconst match=message.match(/\\b(offer_[A-Za-z0-9_-]{16,128})\\b/);\nreturn [{json:{...$json,offerToken:match?.[1]||'',releaseUndeliveredOffer:Boolean(match),deliveryFailureCategory:match?'undelivered_proposal':'delivery_failure_without_proposal'}}];"
+      },
+      "id": "9a0c0d55-9ff9-45fb-b126-43326f9e2129",
+      "name": "Lógica — Clasificar propuesta no entregada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.releaseUndeliveredOffer === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1735b9a9-4af0-41f9-bdbc-0b70fc396eb7",
+      "name": "Lógica — ¿Liberar propuesta no entregada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "offerToken",
+              "keyValue": "={{ $json.offerToken }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "offered"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "delivery_failed"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "203a1387-efb5-403a-87ea-2ff2cef56a71",
+      "name": "Data Tables — Liberar propuesta no entregada",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1980,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Verificar Meta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar desafío Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar desafío Meta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Desafío válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Desafío válido?": {
+      "main": [
+        [
+          {
+            "node": "Respuesta — Devolver desafío Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta — Rechazar desafío Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook — Recibir evento Meta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar firma Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar firma Meta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Firma válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Firma válida?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer mensaje entrante",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Firma inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Extraer mensaje entrante": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Mensaje procesable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Mensaje procesable?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar mensaje recibido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Operación — Ignorar evento no procesable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operación — Preparar mensaje recibido": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Verificar mensaje nuevo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Verificar mensaje nuevo": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar mensaje para coordinador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operación — Preparar mensaje para coordinador": {
+      "main": [
+        [
+          {
+            "node": "Coordinador — Procesar mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Coordinador — Procesar mensaje": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Respuesta automática lista?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Sin respuesta automática",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operación — Preparar respuesta WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Meta WhatsApp — Enviar respuesta con evidencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta WhatsApp — Enviar respuesta con evidencia": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Marcar respuesta aceptada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar propuesta no entregada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Respuesta automática lista?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar respuesta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Sin respuesta automática",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Clasificar propuesta no entregada": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Liberar propuesta no entregada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Liberar propuesta no entregada?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Liberar propuesta no entregada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo al responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Liberar propuesta no entregada": {
+      "main": [
+        [
+          {
+            "node": "Revisión humana — Fallo al responder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo al responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodeGroups": [],
+  "pinData": {}
+}

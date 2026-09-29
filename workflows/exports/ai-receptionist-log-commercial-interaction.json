@@ -1,0 +1,1365 @@
+{
+  "name": "AI receptionist — Registrar interacción comercial",
+  "description": "Registro idempotente de interacciones comerciales de WhatsApp en HubSpot.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "577a6a1e-e0e4-4e62-96f3-68335fb56283",
+      "name": "Manual — Probar registro CRM",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2080,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ec672779-3842-4d44-a531-8a9c88035116",
+              "name": "fullName",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "48424f5f-00a6-469a-b36c-cac3e153bb57",
+              "name": "phone",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "aef1e402-f0ad-4a18-90f5-ad22c69be290",
+              "name": "message",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "d4e1df93-5790-4bd5-b533-39d8ca472555",
+              "name": "interactionKey",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "a36c4278-2fae-4d72-adcc-866761d1f854",
+              "name": "receivedAt",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "2af3c51b-34d0-4ace-8e0e-8b7a0131cd95",
+              "name": "source",
+              "value": "whatsapp",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7371dd16-6c9f-4e11-a1ef-daa3f5ff8f53",
+      "name": "Datos — Interacción de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1856,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$input.first().json;\nconst text=value=>typeof value==='string'?value.trim():'';\nconst fullName=text(input.fullName),rawPhone=text(input.phone),message=text(input.message),interactionKey=text(input.interactionKey),receivedAt=text(input.receivedAt),source=text(input.source);\nconst digits=rawPhone.replace(/\\D/g,'');\nconst receivedDate=new Date(receivedAt);\nconst valid=fullName.length>=2&&digits.length>=10&&digits.length<=15&&message.length>=1&&message.length<=5000&&interactionKey.length>=8&&interactionKey.length<=255&&source==='whatsapp'&&!Number.isNaN(receivedDate.getTime());\nreturn [{json:{...input,fullName,phone:digits?'+'+digits:'',phoneSearch:digits.length>=10?digits.slice(-10):'',message,interactionKey,receivedAt,crm_route:valid?'check_idempotency':'human_review',validationMessage:valid?'Interacción válida; se verifica idempotencia antes de tocar HubSpot.':'Se requiere nombre, teléfono, mensaje, identificador único del mensaje y fecha ISO válidos.'}}];"
+      },
+      "id": "c5d9694b-65e2-4a6d-b367-f7afda27eba7",
+      "name": "Lógica — Validar interacción",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1648,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.crm_route }}",
+              "rightValue": "check_idempotency",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12f0faac-2f14-440e-b1b2-86ad2b4700bd",
+      "name": "Lógica — ¿Interacción válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1424,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "interactionKey",
+              "keyValue": "={{ $('Lógica — Validar interacción').first().json.interactionKey }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "4adc3f3b-1e35-4a18-b428-d2d44dad7a79",
+      "name": "Data Tables — Buscar interacción registrada",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -1200,
+        128
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request=$('Lógica — Validar interacción').first().json;\nconst row=$input.first().json||{};\nif(row.error) return [{json:{...request,crm_route:'human_review',reviewReason:'No se pudo consultar la idempotencia operativa.'}}];\nif(!row.interactionKey) return [{json:{...request,crm_route:'lookup_contact'}}];\nif(row.status==='registered') return [{json:{...request,crm_route:'already_registered',hubspotContactId:row.hubspotContactId||'',hubspotNoteId:row.hubspotNoteId||''}}];\nreturn [{json:{...request,crm_route:'human_review',reviewReason:'Existe una interacción pendiente que requiere revisión antes de reintentar.'}}];"
+      },
+      "id": "94efecc1-6d22-41da-8693-ed43354c458d",
+      "name": "Lógica — Evaluar idempotencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.crm_route }}",
+              "rightValue": "lookup_contact",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1dce544c-eef0-4d61-ab08-aba4ff3c6e3a",
+      "name": "Lógica — ¿Interacción nueva?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -768,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.crm_route }}",
+              "rightValue": "already_registered",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cf5b3fb0-fcac-4530-af3f-66aee47dc1d4",
+      "name": "Lógica — ¿Ya está registrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -544,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "29956d3b-6758-447d-a102-2ca0f9023c72",
+              "name": "outcome",
+              "value": "already_registered",
+              "type": "string"
+            },
+            {
+              "id": "6d4a4360-565f-4822-8d2a-67d62326f20c",
+              "name": "next_action",
+              "value": "No crear una nota duplicada en HubSpot.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "451831c5-9231-474c-b6c1-134ee5223712",
+      "name": "Operación — Preparar interacción ya registrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: $('Lógica — Evaluar idempotencia').first().json.phone }] }], properties: ['firstname','lastname','phone'], limit: 2 }) }}",
+        "options": {}
+      },
+      "id": "983aca8e-19a6-45dc-83a9-ee449ab4dd2a",
+      "name": "HubSpot — Buscar contacto por teléfono",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -544,
+        48
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request=$('Lógica — Evaluar idempotencia').first().json;\nconst response=$input.first().json||{};\nif(response.error) return [{json:{...request,contact_route:'human_review',reviewReason:'Falló la búsqueda del contacto en HubSpot.'}}];\nconst rawContacts=Array.isArray(response.results)?response.results:[];\nconst contacts=[...new Map(rawContacts.filter(contact=>typeof contact?.id==='string').map(contact=>[contact.id,contact])).values()];\nif(contacts.length===0) return [{json:{...request,contact_route:'create_contact'}}];\nif(contacts.length===1) return [{json:{...request,contact_route:'existing_contact',hubspotContactId:contacts[0].id}}];\nreturn [{json:{...request,contact_route:'human_review',reviewReason:'Hay más de un contacto que coincide con el teléfono; no se asociará automáticamente.'}}];"
+      },
+      "id": "7b00ee82-4852-4593-b2ee-b8dadc68dc11",
+      "name": "Lógica — Evaluar coincidencias de contacto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.contact_route }}",
+              "rightValue": "create_contact",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "028021e6-ba99-4937-850d-3abca0da121a",
+      "name": "Lógica — ¿Crear contacto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { firstname: $('Lógica — Evaluar coincidencias de contacto').first().json.fullName, phone: $('Lógica — Evaluar coincidencias de contacto').first().json.phone } }) }}",
+        "options": {}
+      },
+      "id": "a8580813-6b58-43d1-8a80-376846d7c2a1",
+      "name": "HubSpot — Crear contacto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        -64
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "be586db3-d0fc-47d5-8e16-c16c757c34f6",
+              "name": "contactId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "6775931c-1756-4a65-8c46-9d6e665238ed",
+              "name": "interactionKey",
+              "value": "={{ $('Lógica — Evaluar coincidencias de contacto').first().json.interactionKey }}",
+              "type": "string"
+            },
+            {
+              "id": "07434682-c7db-481e-98b1-bb133161ec1f",
+              "name": "fullName",
+              "value": "={{ $('Lógica — Evaluar coincidencias de contacto').first().json.fullName }}",
+              "type": "string"
+            },
+            {
+              "id": "f1f50ea7-acff-497e-bcaf-93c6d816c748",
+              "name": "phone",
+              "value": "={{ $('Lógica — Evaluar coincidencias de contacto').first().json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "20ede3ce-0ceb-40fe-b1c8-<WHATSAPP_PHONE_NUMBER>a1",
+              "name": "message",
+              "value": "={{ $('Lógica — Evaluar coincidencias de contacto').first().json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "b030f431-5546-4d91-abda-b24f208cd169",
+              "name": "receivedAt",
+              "value": "={{ $('Lógica — Evaluar coincidencias de contacto').first().json.receivedAt }}",
+              "type": "string"
+            },
+            {
+              "id": "063361b6-15ec-466a-9294-9debb3161c29",
+              "name": "source",
+              "value": "whatsapp",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "827258b9-8180-481c-85fe-ad9f0ee5575b",
+      "name": "Datos — Preparar contacto creado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        352,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.contact_route }}",
+              "rightValue": "existing_contact",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22ce9116-bf12-4bf3-9572-71fbd7c1cc3c",
+      "name": "Lógica — ¿Contacto existente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fa929b12-e3a7-46eb-a146-0e3c26317fbd",
+              "name": "contactId",
+              "value": "={{ $json.hubspotContactId }}",
+              "type": "string"
+            },
+            {
+              "id": "f0f5b489-fa24-4aae-a61b-9821306f1153",
+              "name": "interactionKey",
+              "value": "={{ $json.interactionKey }}",
+              "type": "string"
+            },
+            {
+              "id": "b64990d9-f270-4005-b4e1-393816111c80",
+              "name": "fullName",
+              "value": "={{ $json.fullName }}",
+              "type": "string"
+            },
+            {
+              "id": "9edfef24-d1d0-480a-882d-12f679d7db69",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "2b7762e0-0b68-4b93-8e88-a017564b125b",
+              "name": "message",
+              "value": "={{ $json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "283d69ed-69be-432e-a0ad-91071cf8ba1c",
+              "name": "receivedAt",
+              "value": "={{ $json.receivedAt }}",
+              "type": "string"
+            },
+            {
+              "id": "9b1cecbd-25aa-4936-878b-268238022d04",
+              "name": "source",
+              "value": "whatsapp",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "9eb608e8-53f4-4050-87e2-1587083e2150",
+      "name": "Datos — Preparar contacto existente",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        128,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "interactionKey": "={{ $json.interactionKey }}",
+            "source": "={{ $json.source }}",
+            "phone": "={{ $json.phone }}",
+            "hubspotContactId": "={{ $json.contactId }}",
+            "message": "={{ $json.message }}",
+            "receivedAt": "={{ $json.receivedAt }}",
+            "status": "pending_note",
+            "hubspotNoteId": "",
+            "processedAt": ""
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "interactionKey",
+              "displayName": "interactionKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "hubspotContactId",
+              "displayName": "hubspotContactId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "receivedAt",
+              "displayName": "receivedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "hubspotNoteId",
+              "displayName": "hubspotNoteId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "08a8e84a-4335-4049-a07b-8f376d500376",
+      "name": "Data Tables — Registrar interacción pendiente",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        48
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/notes",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { hs_timestamp: $('Data Tables — Registrar interacción pendiente').first().json.receivedAt, hs_note_body: '[WhatsApp] ' + $('Data Tables — Registrar interacción pendiente').first().json.message }, associations: [{ to: { id: $('Data Tables — Registrar interacción pendiente').first().json.hubspotContactId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] }] }) }}",
+        "options": {}
+      },
+      "id": "a3d7c584-e118-465e-9b33-6fd30c69a410",
+      "name": "HubSpot — Registrar nota de interacción",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        784,
+        48
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "interactionKey",
+              "keyValue": "={{ $('Data Tables — Registrar interacción pendiente').first().json.interactionKey }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "pending_note"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "registered",
+            "hubspotNoteId": "={{ $json.id }}",
+            "processedAt": "={{ $now.toUTC().toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "hubspotNoteId",
+              "displayName": "hubspotNoteId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "80824440-3b15-4775-833f-51c478c31054",
+      "name": "Data Tables — Marcar interacción registrada",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1008,
+        48
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const row=$input.first().json||{};\nconst valid=row.status==='registered'&&typeof row.hubspotNoteId==='string'&&row.hubspotNoteId.length>0;\nreturn [{json:{crm_route:valid?'success':'human_review',registrationMessage:valid?'Contacto y nota registrados en HubSpot.':'La nota se creó o intentó crear, pero el registro operativo requiere revisión.'}}];"
+      },
+      "id": "3f22dbec-0da6-4765-9fb1-e1e8d3cab6ef",
+      "name": "Lógica — Verificar registro CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.crm_route }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7bb3819c-e0bf-4bf3-90ed-cb79bf5bf337",
+      "name": "Lógica — ¿Registro CRM confirmado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6491e69-a7aa-4a38-99c9-153c7ad61e5b",
+              "name": "outcome",
+              "value": "interaction_registered",
+              "type": "string"
+            },
+            {
+              "id": "54bb377f-d12d-443f-bd56-75f58e8f4bb5",
+              "name": "next_action",
+              "value": "Responder al contacto desde el canal de origen.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "4b07c99a-aa44-41ad-8799-067525ccd1e7",
+      "name": "Operación — Preparar interacción registrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1664,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4dcd7971-145f-4a4f-8f8b-2d559b0cc4d4",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "de25c08e-4e98-4f5f-b138-8081c06df67c",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "53c0eabb-6129-48d0-87cd-c7939bcfef69",
+              "name": "next_action",
+              "value": "Solicitar nombre, teléfono, mensaje, fecha e identificador del mensaje válidos.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "2992ce48-929c-4e7b-8fe4-d901b44b1b09",
+      "name": "Revisión humana — Interacción inválida",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9b0988c1-60f5-4b54-a2cd-b1791d9bcfb8",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "521c626d-8391-47d8-afbc-0a788cd56b30",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "839959be-b163-4fc0-920e-a1cb7b41d0d0",
+              "name": "next_action",
+              "value": "Elegir manualmente el contacto correcto antes de registrar una nota.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "7466d020-10e4-476a-aecb-2f5b214f1e1b",
+      "name": "Revisión humana — Interacción ambigua",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$input.first().json||{};\nconst message=typeof input.error==='string'?input.error:typeof input.error?.message==='string'?input.error.message:'Error sin detalle';\nconst route=/fetch failed|econnrefused|etimedout|timeout|network|socket|rate limit|status code 5\\d\\d|service unavailable/i.test(message)?'transient':'human_review';\nreturn [{json:{failure_route:route,failure_message:message,human_review_required:route==='human_review'}}];"
+      },
+      "id": "f6df644b-79ec-44db-81b6-3bea04fd4cd9",
+      "name": "Lógica — Clasificar fallo CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.failure_route }}",
+              "rightValue": "transient",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e00b85a8-7568-43ac-bc29-af69cc39b9f9",
+      "name": "Lógica — ¿Fallo CRM transitorio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1008,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c3927a03-d870-4946-91c4-f5d9a3ca5381",
+              "name": "outcome",
+              "value": "transient_failure",
+              "type": "string"
+            },
+            {
+              "id": "34847e84-0b99-4784-a93d-37198dc9d0a1",
+              "name": "retry_recommended",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "0c3e05c0-0984-478b-8c89-49d808b66b93",
+              "name": "next_action",
+              "value": "Reintentar de forma controlada; no duplicar la nota.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "233ba1d6-a854-4aa9-871a-aa95ac560c7b",
+      "name": "Operación — Preparar reintento CRM",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8a1e678c-d0b4-43da-b3ad-9c4c807c5dcd",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "97d866ab-b982-4d73-90dc-1682b0830282",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "d5543284-5edf-4a56-9240-c0bd56610232",
+              "name": "next_action",
+              "value": "Revisar el error antes de reintentar HubSpot.",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "options": {}
+      },
+      "id": "6f9322ac-7f13-435a-848c-3f1952721f12",
+      "name": "Revisión humana — Fallo CRM",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Workflow inactivo y con campos de prueba vacíos.\n\nUna interacción requiere nombre, teléfono, mensaje, fecha ISO e identificador único del mensaje.\n\nBusca por teléfono. Si hay 0 coincidencias crea el contacto; si hay 1 registra una nota; si hay varias, no toca HubSpot y deriva a revisión humana.\n\nLa Data Table impide volver a registrar una interacción que ya quedó completada.",
+        "height": 190,
+        "width": 760
+      },
+      "id": "ff1a7977-437a-47e8-9e90-1f2e2213b825",
+      "name": "Nota — Condición antes de activar",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1648,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "4961614f-9374-46a4-9b2d-161d5f6750f8",
+      "name": "Cuando lo ejecuta otro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        -1856,
+        352
+      ]
+    }
+  ],
+  "connections": {
+    "Manual — Probar registro CRM": {
+      "main": [
+        [
+          {
+            "node": "Datos — Interacción de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Interacción de prueba": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar interacción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar interacción": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Interacción válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Interacción válida?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar interacción registrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Interacción inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar interacción registrada": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Evaluar idempotencia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Evaluar idempotencia": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Interacción nueva?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Interacción nueva?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Buscar contacto por teléfono",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Ya está registrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Ya está registrada?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar interacción ya registrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Interacción ambigua",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Buscar contacto por teléfono": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Evaluar coincidencias de contacto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Evaluar coincidencias de contacto": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Crear contacto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Crear contacto?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Crear contacto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Contacto existente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Crear contacto": {
+      "main": [
+        [
+          {
+            "node": "Datos — Preparar contacto creado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Preparar contacto creado": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Registrar interacción pendiente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Contacto existente?": {
+      "main": [
+        [
+          {
+            "node": "Datos — Preparar contacto existente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Interacción ambigua",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Preparar contacto existente": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Registrar interacción pendiente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Registrar interacción pendiente": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Registrar nota de interacción",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Registrar nota de interacción": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Marcar interacción registrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Marcar interacción registrada": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Verificar registro CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Clasificar fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Verificar registro CRM": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Registro CRM confirmado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Registro CRM confirmado?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar interacción registrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Clasificar fallo CRM": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Fallo CRM transitorio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Fallo CRM transitorio?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar reintento CRM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta otro workflow": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar interacción",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "pinData": {}
+}

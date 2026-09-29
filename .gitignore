@@ -1,0 +1,32 @@
+node_modules/
+coverage/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Configuración local y secretos. El ejemplo documentado sí se versiona.
+.env
+.env.*
+!.env.example
+*.local
+*.local.json
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Estado local de servicios y datos operativos.
+qdrant_storage/
+qdrant_snapshots/
+n8n/
+database.sqlite*
+workflows/private/
+
+# Archivos de herramientas y del entorno.
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+AGENTS.md

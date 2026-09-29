@@ -1,0 +1,352 @@
+{
+  "name": "AI receptionist — Consultar conocimiento",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8dd8f99c-3063-4f68-8a22-86b18f5e9c13",
+      "name": "Manual — Probar consulta",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        272,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1be368c7-ce23-4ca8-bc22-8aeb57fc8dfb",
+              "name": "question",
+              "value": "¿Qué servicios ofrece la consultora?",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d879472b-5eda-4959-8a46-63eaa7f12c7a",
+      "name": "Datos — Pregunta de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        512,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.question }}",
+        "options": {
+          "systemMessage": "={{ $json.language === 'en' ? 'You are the receptionist for a demo consultancy. Before answering, you must use the Qdrant knowledge tool. Answer only with facts found in retrieved documents. Do not invent prices, clients, results, capabilities, or availability. If evidence is insufficient, answer exactly: I do not have verified information to answer that question. I will refer you to a team member. Reply briefly and clearly in English.' : 'Sos el asistente de recepción de una consultora demo. Antes de responder, usá obligatoriamente la herramienta Qdrant. Respondé únicamente con información presente en los documentos recuperados. No inventes precios, clientes, casos de éxito, capacidades ni disponibilidad. Si la evidencia no alcanza, respondé exactamente: No cuento con información respaldada para responder esa consulta. Te derivo a una persona del equipo. Respondé en español, de forma breve y clara.' }}",
+          "maxIterations": 3,
+          "returnIntermediateSteps": true
+        }
+      },
+      "id": "ac3e98c4-03bb-4c4c-8e27-3c062971f70f",
+      "name": "IA — Responder con evidencia",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        768,
+        368
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Busca información respaldada en la base de conocimiento de la consultora demo. Devuelve fragmentos documentales relevantes para responder la consulta.",
+        "qdrantCollection": {
+          "__rl": true,
+          "value": "consultora_knowledge_v1",
+          "mode": "list",
+          "cachedResultName": "consultora_knowledge_v1"
+        },
+        "options": {
+          "contentPayloadKey": "content",
+          "metadataPayloadKey": "metadata"
+        }
+      },
+      "id": "10c7c291-fb69-420b-86fc-35769cf483b6",
+      "name": "Qdrant — Buscar conocimiento",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1.3,
+      "position": [
+        768,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "model": "qwen3.5:9b",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "ed7c20d8-5857-4e94-9cc1-b0e8c0013238",
+      "name": "Ollama — Modelo conversacional",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        512,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:v1.5"
+      },
+      "id": "9c01e6db-d500-4a27-b0a3-f83e9279f1d2",
+      "name": "Ollama — Embeddings consulta",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [
+        848,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $input.first().json;\nconst errorValue = source.error;\nconst message = typeof errorValue === 'object' && errorValue !== null && typeof errorValue.message === 'string'\n  ? errorValue.message.trim()\n  : typeof errorValue === 'string' ? errorValue.trim() : 'Error sin detalle';\nconst transientPattern = /fetch failed|econnrefused|etimedout|timeout|network|socket|rate limit|status code 5\\d\\d|service unavailable/i;\nconst failureRoute = transientPattern.test(message) ? 'transient' : 'human_review';\nreturn [{\n  json: {\n    ...source,\n    failure_route: failureRoute,\n    failure_message: message,\n    human_review_required: failureRoute === 'human_review',\n  },\n}];"
+      },
+      "id": "f87f40b7-558a-4fad-8313-8d1e28711382",
+      "name": "Lógica — Clasificar fallo consulta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.failure_route }}",
+              "rightValue": "transient",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f896b2a-7241-43db-971d-3f354235a4de",
+      "name": "Lógica — ¿Reintentar consulta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "779ae583-0535-4903-94d2-4b43fd112393",
+              "name": "outcome",
+              "value": "transient_failure",
+              "type": "string"
+            },
+            {
+              "id": "127cfa53-d6c2-4cb1-be0a-87c85f789f91",
+              "name": "retry_recommended",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "10394b3d-2f0b-433f-906e-a4ec24b47536",
+      "name": "Operación — Preparar reintento consulta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "59bf8dda-23e0-4acc-ac60-6bae4abd94fa",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "12e61417-2e36-4135-bd9d-a88234e9a207",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "2758318e-ac3c-4b1c-aadb-<WHATSAPP_PHONE_NUMBER>f",
+              "name": "reply_template",
+              "value": "No pude completar esta solicitud con información verificada. Una persona del equipo continuará la atención.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d84caab-74e5-42cd-a784-0c5ba5a17d51",
+      "name": "Revisión humana — Preparar derivación consulta",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        640
+      ]
+    },
+    {
+      "id": "0000e0a2-d0e0-4ed1-b56d-b460e2f1568f",
+      "name": "Cuando lo ejecuta el coordinador",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -260,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    }
+  ],
+  "connections": {
+    "Manual — Probar consulta": {
+      "main": [
+        [
+          {
+            "node": "Datos — Pregunta de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Pregunta de prueba": {
+      "main": [
+        [
+          {
+            "node": "IA — Responder con evidencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama — Modelo conversacional": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "IA — Responder con evidencia",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant — Buscar conocimiento": {
+      "ai_tool": [
+        [
+          {
+            "node": "IA — Responder con evidencia",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama — Embeddings consulta": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Qdrant — Buscar conocimiento",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA — Responder con evidencia": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Lógica — Clasificar fallo consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Clasificar fallo consulta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Reintentar consulta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Reintentar consulta?": {
+      "main": [
+        [
+          {
+            "node": "Operación — Preparar reintento consulta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Preparar derivación consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta el coordinador": {
+      "main": [
+        [
+          {
+            "node": "IA — Responder con evidencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "pinData": {}
+}

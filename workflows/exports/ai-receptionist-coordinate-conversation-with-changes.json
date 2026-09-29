@@ -1,0 +1,2071 @@
+{
+  "name": "AI receptionist — Coordinar conversación con cambios",
+  "description": "Borrador inactivo: reconoce cancelación y reprogramación y conserva el flujo actual de conocimiento y reservas.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "35017923-9b4d-41c1-bdbf-e1875a5c24e0",
+      "name": "Manual — Probar coordinador",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -976,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "51e30fcb-f0b5-41b8-9d72-8761c8ac571a",
+      "name": "Cuando lo ejecuta otro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -976,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "812bef14-f4b2-473b-a743-89d0d6c6c546",
+              "name": "messageId",
+              "value": "manual_test_message_004",
+              "type": "string"
+            },
+            {
+              "id": "a3305489-ac77-4e4d-9a58-d9ea77c27b61",
+              "name": "from",
+              "value": "<WHATSAPP_PHONE_NUMBER>",
+              "type": "string"
+            },
+            {
+              "id": "18ea168f-6bb2-4097-aa2f-4b5ba6c0291f",
+              "name": "contactName",
+              "value": "Contacto de prueba",
+              "type": "string"
+            },
+            {
+              "id": "254fa33b-036d-441d-8d9a-8e0c44b77e33",
+              "name": "messageText",
+              "value": "a las 08:30",
+              "type": "string"
+            },
+            {
+              "id": "a2ddcac5-57f4-4be0-977b-b62a01f34cf1",
+              "name": "receivedAt",
+              "value": "={{ $now.toUTC().toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "fd7c0cda-b3fc-49ed-979a-33ef1be3c95e",
+              "name": "phoneNumberId",
+              "value": "<WHATSAPP_PHONE_NUMBER>",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "204d8851-aec7-459c-8dfb-59383f393e90",
+      "name": "Datos — Mensaje de prueba",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -768,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const messageId=String($json.messageId??'').trim();\nconst from=String($json.from??'').replace(/[^0-9]/g,'');\nconst contactName=String($json.contactName??'').trim();\nconst messageText=String($json.messageText??'').trim();\nconst receivedAt=String($json.receivedAt??'').trim();\nconst phoneNumberId=String($json.phoneNumberId??'').trim();\nconst errors=[];\nif(messageId.length<1||messageId.length>256) errors.push('messageId inválido.');\nif(!/^\\d{7,15}$/.test(from)) errors.push('from debe incluir código de país y tener entre 7 y 15 dígitos.');\nif(contactName.length>160) errors.push('contactName supera 160 caracteres.');\nif(messageText.length<1||messageText.length>1000) errors.push('messageText debe tener entre 1 y 1000 caracteres.');\nif(Number.isNaN(Date.parse(receivedAt))) errors.push('receivedAt debe ser una fecha ISO válida.');\nif(!/^\\d{1,20}$/.test(phoneNumberId)) errors.push('phoneNumberId inválido.');\nreturn [{json:{messageId,from,contactName,messageText,receivedAt,phoneNumberId,input_route:errors.length===0?'classify':'human_review',validationErrors:errors}}];"
+      },
+      "id": "8af6a21a-81ff-4001-8a2a-a92a63b9c939",
+      "name": "Lógica — Validar entrada conversacional",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.input_route }}",
+              "rightValue": "classify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9f3a8c2d-1817-45ca-9c04-d8089f79fa17",
+      "name": "Lógica — ¿Entrada válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -288,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://<OLLAMA_HOST>:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'qwen3.5:9b', stream: false, think: false, options: { temperature: 0 }, format: { type: 'object', properties: { intent: { type: 'string', enum: ['knowledge_question','booking_request','booking_confirmation','meeting_change','active_meetings_query','clarification'] }, needsHumanReview: { type: 'boolean' }, language: { type: 'string', enum: ['es','en'] }, bookingSelection: { type: 'object', properties: { kind: { type: 'string', enum: ['none','morning','afternoon','early','middle','late','time'] }, hour: { type: 'integer', minimum: -1, maximum: 23 }, minute: { type: 'integer', minimum: -1, maximum: 59 } }, required: ['kind','hour','minute'], additionalProperties: false }, meetingReference: { type: 'object', properties: { day: { type: 'integer', minimum: -1, maximum: 31 }, month: { type: 'integer', minimum: -1, maximum: 12 }, year: { type: 'integer', minimum: -1, maximum: 2100 }, hour: { type: 'integer', minimum: -1, maximum: 23 }, minute: { type: 'integer', minimum: -1, maximum: 59 } }, required: ['day','month','year','hour','minute'], additionalProperties: false }, rescheduleTarget: { type: 'object', properties: { day: { type: 'integer', minimum: -1, maximum: 31 }, month: { type: 'integer', minimum: -1, maximum: 12 }, year: { type: 'integer', minimum: -1, maximum: 2100 }, hour: { type: 'integer', minimum: -1, maximum: 23 }, minute: { type: 'integer', minimum: -1, maximum: 59 } }, required: ['day','month','year','hour','minute'], additionalProperties: false } }, required: ['intent','needsHumanReview','language','bookingSelection','meetingReference','rescheduleTarget'], additionalProperties: false }, messages: [ { role: 'system', content: 'Clasificá e interpretá únicamente el último mensaje de un cliente de una consultora. No respondas al cliente, no inventes datos, no propongas horarios y no realices acciones. El workflow usa tu salida para entender lenguaje natural, pero valida todo contra Calendar antes de actuar. intent: knowledge_question para servicios; booking_request para pedir una reunión o responder dentro de una conversación de agenda; booking_confirmation para aceptar una propuesta; meeting_change para cancelar o reprogramar una reunión; active_meetings_query para pedir reuniones activas; clarification solo si no hay significado identificable. Los mensajes breves con contexto, como “tarde”, “después de comer”, “tipo cuatro”, “tipo 10 me queda bien”, “cerca de las diez” y “más o menos a las 10”, son booking_request. bookingSelection debe expresar la preferencia: “tarde” o “después de comer” = kind afternoon; “mañana” o “antes de comer” = kind morning; una hora explícita o coloquial = kind time con su hora y minuto. Cuando recibas Contexto de agenda vigente, usalo sólo para interpretar un mensaje breve como la respuesta al paso actual; no inventes fecha ni disponibilidad. Por ejemplo, con contexto de mañana del 05/11, “tipo 10 me queda bien” es kind time, hour 10, minute 0. Si no hay una hora, nunca uses kind time: usá la franja o kind none. Que falte fecha u hora no requiere revisión humana: el workflow preguntará el dato faltante. meetingReference identifica la reunión existente que se quiere cambiar. rescheduleTarget identifica el nuevo día y horario, solo para reprogramaciones. En “reprogramar la del jueves 8 de octubre a las 4 y media al viernes 9 a las 10 de la mañana”, meetingReference es 8/10 16:30 y rescheduleTarget es 9/10 10:00. Si se menciona solo la reunión origen, rescheduleTarget usa -1 en todos sus campos: no confundas el horario de la reunión existente con el nuevo horario. Si no hay referencia o destino, sus campos usan -1. Si el mensaje incluye una propuesta pendiente, interpretá la aceptación o el rechazo en relación con ESA acción: una aceptación natural de una cancelación, reserva o reprogramación usa intent booking_confirmation; un pedido nuevo o un rechazo no. No confirmes por cortesía ni por una frase ambigua. Respondé solo el JSON del schema.' }, { role: 'user', content: [$json.pendingProposalAction ? `Propuesta pendiente: ${$json.pendingProposalAction}.` : '', $json.pendingSelectionContext ? `Contexto de agenda vigente: ${JSON.stringify($json.pendingSelectionContext)}` : '', `Mensaje del cliente: ${$json.messageText}`].filter(Boolean).join('\\n') } ] } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1ca7322a-4629-46db-a5b3-b942a85657be",
+      "name": "Ollama — Clasificar intención",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source={...$('Lógica — Validar entrada conversacional').first().json,...$json};\nconst text=String(source.messageText||'');\nconst normalized=text.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();\nconst inferLanguage=value=>/\\b(?:i|yes|confirm|cancel|reschedule|meeting|show|my|it|what|how|please)\\b/i.test(String(value||''))?'en':'es';\nconst raw=String($json.message?.content??'').trim();let parsed;try{parsed=JSON.parse(raw)}catch{parsed=null}\nconst intents=new Set(['knowledge_question','booking_request','booking_confirmation','meeting_change','active_meetings_query','clarification']);const kinds=new Set(['none','morning','afternoon','early','middle','late','time']);const integer=(value,min,max)=>Number.isInteger(value)&&value>=min&&value<=max;\nconst temporal=value=>value&&typeof value==='object'&&integer(value.day,-1,31)&&integer(value.month,-1,12)&&integer(value.year,-1,2100)&&integer(value.hour,-1,23)&&integer(value.minute,-1,59);\nconst semanticValid=parsed&&typeof parsed.bookingSelection==='object'&&kinds.has(parsed.bookingSelection.kind)&&integer(parsed.bookingSelection.hour,-1,23)&&integer(parsed.bookingSelection.minute,-1,59)&&temporal(parsed.meetingReference)&&temporal(parsed.rescheduleTarget);\nconst valid=parsed&&typeof parsed==='object'&&intents.has(parsed.intent)&&typeof parsed.needsHumanReview==='boolean'&&['es','en'].includes(parsed.language)&&semanticValid;\nconst fallbackPeriod=/^(?:a |por )?(?:la )?manana$|^(?:a |por )?(?:la )?tarde$|^morning$|^afternoon$/.test(normalized);const fallbackTime=/\\b(?:a\\s+)?las\\s+(?:[01]?\\d|2[0-3])(?::[0-5]\\d|\\s+y\\s+media)?(?:\\s*(?:am|pm|de la manana|de la tarde))?\\b/.test(normalized);const fallbackPreference=/^(?:al |por el )?(?:principio|inicio)(?: de la (?:manana|tarde))?$|^(?:a )?media (?:manana|tarde)$|^(?:hacia )?(?:el )?final(?: de la (?:manana|tarde))?$|^mas tarde$/.test(normalized);const explicitBooking=/(?:agendar|reservar|programar|coordinar)\\b.*\\b(?:reunion|turno|meeting|call)\\b|\\b(?:reunion|turno|meeting|call)\\b.*\\b(?:agendar|reservar|programar|coordinar)\\b/.test(normalized);const explicitCancellation=/(?:dar(?:la)? de baja|borrar|eliminar|anular|cancelar|cancel|delete|remove|call off)\\b/.test(normalized);const explicitReschedule=/\\b(?:reprogramar|reprograma|reprogramalo|reprogramala|cambiar|cambia|pasar|pasala|pasarlo|reschedule)\\b/.test(normalized);const cannotAttend=/\\b(?:no voy a poder|no puedo|se me complica|no llego)\\s+(?:ir|asistir)\\b/.test(normalized)&&/\\b(?:reunion|turno|meeting|call)\\b/.test(normalized);const emptyTemporal={day:-1,month:-1,year:-1,hour:-1,minute:-1};\nif(!valid){const intent=(explicitCancellation||cannotAttend||explicitReschedule)?'meeting_change':(explicitBooking||fallbackPeriod||fallbackTime||fallbackPreference)?'booking_request':'clarification';const clarification=intent==='clarification';return [{json:{...source,intent,needsHumanReview:false,language:inferLanguage(text),semanticBooking:{kind:'none',hour:-1,minute:-1},semanticReference:emptyTemporal,semanticRescheduleTarget:emptyTemporal,outcome:clarification?'conversation_clarification_ready':undefined,classificationStatus:'invalid_model_output',classification_route:intent,automationEligible:!clarification}}];}\nconst semanticBooking=parsed.bookingSelection,semanticReference=parsed.meetingReference,semanticRescheduleTarget=parsed.rescheduleTarget;const hasSemanticBooking=semanticBooking.kind!=='none';const hasSemanticReference=[semanticReference.day,semanticReference.month,semanticReference.year,semanticReference.hour,semanticReference.minute].some(value=>value!==-1);const asksServices=/(?:que|qué|cuales|cuáles|what)\\s+(?:servicios?|services?).{0,60}(?:ofrecen|offer)|(?:ofrecen|offer).{0,60}(?:servicios?|services?)/i.test(text);const modelChangeWithReference=parsed.intent==='meeting_change'&&hasSemanticReference;const overrideIntent=asksServices?'knowledge_question':(explicitCancellation||cannotAttend||explicitReschedule||modelChangeWithReference)?'meeting_change':(explicitBooking||fallbackPeriod||fallbackTime||fallbackPreference)?'booking_request':'';const pendingAction=['new','reschedule','cancel'].includes(String(source.pendingProposalAction||''))?String(source.pendingProposalAction):'';const modelAcceptsPending=Boolean(pendingAction)&&parsed.intent==='booking_confirmation';const intent=modelAcceptsPending?'booking_confirmation':(overrideIntent||parsed.intent);const clarification=!overrideIntent&&intent==='clarification';return [{json:{...source,intent,needsHumanReview:clarification,language:parsed.language||inferLanguage(text),semanticBooking,semanticReference,semanticRescheduleTarget,classificationStatus:overrideIntent?'fallback_override':'accepted',classification_route:clarification?'clarification':intent,automationEligible:!clarification,hasSemanticBooking,hasSemanticReference}}];"
+      },
+      "id": "7a5cfeb2-f596-4b47-aebc-1e4a668a4eba",
+      "name": "Lógica — Validar clasificación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "if($json.outcome==='human_review') return [{json:{...$json,route:'human_review',automationEligible:false}}];\nconst nextActions={\nknowledge_question:'Consultar conocimiento documentado y preparar una respuesta con evidencia.',\nbooking_request:'Pedir o interpretar datos de agenda antes de consultar disponibilidad.',\nbooking_confirmation:'Validar una oferta vigente antes de reservar una reunión.',\nactive_meetings_query:'Buscar únicamente las reuniones activas asociadas al contacto.',\nclarification:'Pedir una aclaración breve antes de continuar.',\nhuman_review:'Derivar el mensaje a revisión humana antes de responder.'\n};\nconst route=$json.classification_route||'human_review';\nreturn [{json:{...$json,outcome:'classification_ready',route,next_action:nextActions[route]||nextActions.human_review,automationEligible:false}}];"
+      },
+      "id": "73c86d43-c703-417b-8daa-b75adfe6cf13",
+      "name": "Operación — Preparar siguiente paso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c9790777-f36f-4890-880e-289c8f48b219",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "587b0c09-536a-4945-be57-7f4e94dc1a59",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "77531ed7-33e7-48ff-813c-44d23a0ed155",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar los datos de entrada del mensaje.",
+              "type": "string"
+            },
+            {
+              "id": "008b09f8-f5db-468b-9f19-25e6a91ed14d",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "3f32b50c-e49a-4396-b55b-f9f462ce910d",
+      "name": "Revisión humana — Entrada inválida",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -48,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4f169ef8-9626-4ac1-b4bf-35c75358fd13",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "036362d7-cdb4-4aa7-a646-e01a025bd4d6",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "9f215586-6a36-46fd-84d1-c8ae084ca2c6",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar disponibilidad y respuesta de Ollama.",
+              "type": "string"
+            },
+            {
+              "id": "c95a2d44-3acc-4dc3-ab2d-4b798d91962d",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "498a0e5d-7608-483c-ab5e-0e68de21e50c",
+      "name": "Revisión humana — Fallo del clasificador",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        192,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "content": "Este borrador solo clasifica el mensaje. No está conectado al receptor de WhatsApp y no ejecuta envíos, CRM ni reservas.",
+        "height": 120,
+        "width": 430
+      },
+      "id": "0127ca2a-5161-4074-bdf8-b3df050d462c",
+      "name": "Nota — Alcance del borrador",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        304,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "knowledge_question",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "289179c6-2680-4c5f-97ac-cb5eb940fc01",
+      "name": "Lógica — ¿Consulta de conocimiento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "054b095a-088c-4a14-918c-85b88823f050",
+              "name": "question",
+              "value": "={{ $json.messageText }}",
+              "type": "string"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "9bc2d70f-d41a-41e1-87ee-dc455a549d01",
+      "name": "Datos — Preparar consulta de conocimiento",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        656,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Consultar conocimiento"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "cc7b793c-7d42-4e2b-9ea0-5480865d6f3b",
+      "name": "Conocimiento — Responder con evidencia",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        896,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar clasificación').first().json;\nlet responseDraft=String($json.output??'').trim();\nif(responseDraft.length<1||responseDraft.length>2000)return [{json:{...source,outcome:'human_review',human_review_required:true,knowledgeStatus:'invalid_or_missing_answer',next_action:'Revisar la respuesta de conocimiento antes de enviar cualquier mensaje.',automationEligible:false}}];\nconst normalized=String(source.messageText||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim();\nif(/^(?:hola|buenas|buen dia|buen dia,|hello|hi)\\b/.test(normalized)&& !/^(?:hola|hello|hi)\\b/i.test(responseDraft)){const prefix=source.language==='en'?'Hello, ':'Hola, ';responseDraft=prefix+responseDraft.charAt(0).toLowerCase()+responseDraft.slice(1);}\nreturn [{json:{...source,outcome:'knowledge_answer_ready',route:'knowledge_question',knowledgeStatus:'validated',responseDraft,next_action:'Revisar la respuesta respaldada antes de conectarla al envío de WhatsApp.',automationEligible:false}}];"
+      },
+      "id": "49160b1c-7cf7-4ec5-925a-1803af28de88",
+      "name": "Lógica — Validar respuesta respaldada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4adddaa7-7061-45fe-bb8d-5ca7c73a59b8",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "194f3258-0fe2-4f9b-a77b-47f49710a8e0",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "3a4898dd-8b1b-4bb3-8e5f-318f5cc8f39a",
+              "name": "next_action",
+              "value": "No responder automáticamente; revisar el fallo de consulta de conocimiento.",
+              "type": "string"
+            },
+            {
+              "id": "4663c098-e7d0-4c54-9eaf-f41b35661a82",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cc5c2437-a71d-4a78-9f63-b4b82828e3f5",
+      "name": "Revisión humana — Fallo de conocimiento",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1136,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "booking_request",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "73842ccd-fa2e-4dcf-8f72-cddf8d2cf4aa",
+      "name": "Lógica — ¿Solicitud de reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        992,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$json;const text=String(source.messageText??'').trim();const normalizedText=text.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();const semantic=source.semanticBooking&&typeof source.semanticBooking==='object'?source.semanticBooking:{kind:'none',hour:-1,minute:-1};const semanticReference=source.semanticReference&&typeof source.semanticReference==='object'?source.semanticReference:{hour:-1,minute:-1};\nconst iso=text.match(/(?:^|\\s)(\\d{4})-(\\d{1,2})-(\\d{1,2})\\s+([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)/);const dmy=text.match(/(?:^|\\s)(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})\\s+(?:a\\s+las\\s+)?([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s|$)/i);const months={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};const natural=normalizedText.match(/(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)?\\s*(\\d{1,2})\\s+de\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\\s+de\\s+(\\d{4}))?.{0,40}?(?:a\\s+las\\s+)?(\\d{1,2})(?::([0-5]\\d))?\\s*(de\\s+la\\s+tarde|de\\s+la\\s+manana|am|pm)?/i);let parts=iso?{year:iso[1],month:iso[2],day:iso[3],hour:iso[4],minute:iso[5]}:dmy?{day:dmy[1],month:dmy[2],year:dmy[3],hour:dmy[4],minute:dmy[5]}:null;\nif(!parts&&natural){let hour=Number(natural[4]);const suffix=natural[6]||'';if(/tarde|pm/i.test(suffix)&&hour<12)hour+=12;if(/manana|am/i.test(suffix)&&hour===12)hour=0;const today=new Date();let year=Number(natural[3]||today.getFullYear());const month=months[natural[2]];if(!natural[3]&&new Date(`${year}-${String(month).padStart(2,'0')}-${String(natural[1]).padStart(2,'0')}T00:00:00-03:00`).getTime()<Date.now()-86400000)year++;parts={day:natural[1],month:String(month),year:String(year),hour:String(hour),minute:natural[5]||'00'};}\nconst namedDate=normalizedText.match(/(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)?\\s*(\\d{1,2})\\s+de\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\\s+de\\s+(\\d{4}))?/i);const numericDate=normalizedText.match(/(?:^|\\s)(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})(?:\\s|$)/);const weekdayDate=normalizedText.match(/\\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\s+(\\d{1,2})\\b/);if(!parts&&(namedDate||numericDate||weekdayDate)){const day=String(namedDate?namedDate[1]:numericDate?numericDate[1]:weekdayDate[1]).padStart(2,'0');let month=Number(namedDate?months[namedDate[2]]:numericDate?numericDate[2]:new Date().getMonth()+1);let year=Number(namedDate?(namedDate[3]||new Date().getFullYear()):numericDate?numericDate[3]:new Date().getFullYear());let candidate=new Date(`${year}-${String(month).padStart(2,'0')}-${day}T00:00:00-03:00`);if((namedDate&&!namedDate[3]||weekdayDate)&&candidate.getTime()<Date.now()-86400000){month++;if(month>12){month=1;year++;}candidate=new Date(`${year}-${String(month).padStart(2,'0')}-${day}T00:00:00-03:00`);}const base=`${year}-${String(month).padStart(2,'0')}-${day}`;return [{json:{...source,booking_route:'day_availability',dayStart:`${base}T08:00:00-03:00`,dayEnd:`${base}T18:00:00-03:00`,calendarId:'faustoponceb@gmail.com',timezone:'America/Argentina/Buenos_Aires'}}];}\nconst contextualTime=normalizedText.match(/\\b(?:a\\s+)?las\\s+([01]?\\d|2[0-3])(?::([0-5]\\d)|\\s+y\\s+media)?\\s*(de\\s+la\\s+tarde|de\\s+la\\s+manana|am|pm)?/i);const colloquialTime=normalizedText.match(/\\b(?:tipo|como|cerca de|alrededor de|aprox(?:imadamente)?|mas o menos)\\s+(?:de\\s+)?(?:a\\s+las\\s+)?([01]?\\d|2[0-3])(?::([0-5]\\d)|\\s+y\\s+media)?\\s*(de\\s+la\\s+tarde|de\\s+la\\s+manana|am|pm)?/i);const onlyTime=normalizedText.match(/^([01]?\\d|2[0-3])(?::([0-5]\\d))?\\s*(de\\s+la\\s+tarde|de\\s+la\\s+manana|am|pm)?[.!?]*$/i);const suppliedTime=contextualTime||colloquialTime||onlyTime;const semanticTime=(Number.isInteger(semantic.hour)&&semantic.hour>=0)||(Number.isInteger(semanticReference.hour)&&semanticReference.hour>=0);const isMorning=!suppliedTime&&!semanticTime&&(/^(?:a |por )?(?:la )?manana$|^morning$|(?:antes de (?:comer|almorzar)|temprano)/.test(normalizedText)||semantic.kind==='morning');const isAfternoon=!suppliedTime&&!semanticTime&&(/^(?:a |por )?(?:la )?tarde$|^afternoon$|(?:despues de (?:comer|almorzar)|post(?:[- ]?almuerzo)?|a la tarde)/.test(normalizedText)||semantic.kind==='afternoon');const selectionPreference=isMorning?'morning':isAfternoon?'afternoon':null;if(!parts&&selectionPreference)return [{json:{...source,booking_route:'resolve_selection',selectionPreference}}];const timePreference=!suppliedTime&&!semanticTime&&(/^(?:al |por el )?(?:principio|inicio)(?: de la (?:manana|tarde))?$/.test(normalizedText)||semantic.kind==='early'?'early':/^(?:a )?media (?:manana|tarde)$/.test(normalizedText)||semantic.kind==='middle'?'middle':/^(?:hacia )?(?:el )?final(?: de la (?:manana|tarde))?$|^mas tarde$/.test(normalizedText)||semantic.kind==='late'?'late':null);if(!parts&&timePreference)return [{json:{...source,booking_route:'resolve_selection',timePreference}}];if(!parts&&(suppliedTime||semanticTime)){let hour=suppliedTime?Number(suppliedTime[1]):(Number.isInteger(semantic.hour)&&semantic.hour>=0?semantic.hour:semanticReference.hour);const suffix=suppliedTime?.[3]||'';if(/tarde|pm/i.test(suffix)&&hour<12)hour+=12;if(/manana|am/i.test(suffix)&&hour===12)hour=0;const minute=suppliedTime?.[2]||((suppliedTime?.[0]||'').includes('media')?'30':String(semantic.minute>=0?semantic.minute:(semanticReference.minute>=0?semanticReference.minute:0)).padStart(2,'0'));const selectedTime=`${String(hour).padStart(2,'0')}:${minute}`;const alternatives=!suffix&&hour<8?[selectedTime,`${String(hour+12).padStart(2,'0')}:${minute}`]:[selectedTime];return [{json:{...source,booking_route:'resolve_selection',selectedTime,selectedTimeAlternatives:alternatives}}];}\nif(!parts)return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'Decime qué día te conviene y te consulto si preferís mañana o tarde.',automationEligible:true}}];const {day,month,year,hour,minute}=parts;const start=new Date(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:00-03:00`);const end=new Date(start.getTime()+1800000);const requestedHour=Number(hour),requestedMinute=Number(minute);if(requestedHour<8||requestedHour>17||(requestedHour===17&&requestedMinute>30))return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'Atendemos reuniones de 08:00 a 18:00. El último horario posible es 17:30. Indicame un horario dentro de esa franja.',automationEligible:true}}];if(Number.isNaN(start.getTime())||start<=new Date())return [{json:{...source,outcome:'booking_clarification_ready',route:'booking_request',responseDraft:'Necesito una fecha y horario futuros para revisar disponibilidad.',automationEligible:true}}];const label=new Intl.DateTimeFormat(source.language==='en'?'en-GB':'es-AR',{timeZone:'America/Argentina/Buenos_Aires',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(start).replace(',','');return [{json:{...source,booking_route:'offer',requestedStart:start.toISOString(),requestedEnd:end.toISOString(),requestedSlotLabel:label,requestedTime:`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`,dayStart:`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T08:00:00-03:00`,dayEnd:`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T18:00:00-03:00`,calendarId:'faustoponceb@gmail.com',timezone:'America/Argentina/Buenos_Aires',offerExpiresAt:new Date(Date.now()+900000).toISOString()}}];"
+      },
+      "id": "e9f379c3-7580-4898-9211-2e2549aae8a9",
+      "name": "Lógica — Extraer horario de reunión",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.booking_route }}",
+              "rightValue": "offer",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "06cc0d28-b2e4-4dfc-96ea-f487be022218",
+      "name": "Lógica — ¿Horario de reunión completo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Generar oferta de agenda"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "ca82ccc2-734a-4861-ac80-4f73cfdb9e03",
+      "name": "Agenda — Generar oferta temporal",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1840,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const extracted=$('Lógica — Extraer horario de reunión').first().json;\nlet resolved={};\ntry{resolved=$('Lógica — Resolver opción de agenda').first().json}catch{}\nconst source={...extracted,...resolved,...$json};\nconst outcome=String($json.outcome??source.outcome??'');\nif(outcome==='booking_clarification_ready') return [{json:source}];\nif(outcome==='booking_offer_created') return [{json:{...source,offerToken:String($json.offerToken??''),outcome:'booking_offer_ready',route:'booking_request',responseDraft:`Tengo disponible el ${source.requestedSlotLabel} para una reunión de 30 minutos. La propuesta vence en 15 minutos. Respondé “sí, confirmo” para continuar.`,automationEligible:true}}];\nif(outcome==='slot_unavailable'||outcome==='slot_already_offered') return [{json:{...source,outcome:'booking_slot_unavailable',route:'booking_request',responseDraft:'Ese horario no está disponible. Indicame otra fecha y hora.',automationEligible:true}}];\nreturn [{json:{...source,outcome:'human_review',human_review_required:true,next_action:'Revisar el resultado de la oferta antes de responder.',automationEligible:false}}];"
+      },
+      "id": "b35308a9-a815-4efe-883a-9ef78ede600c",
+      "name": "Lógica — Preparar respuesta de agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "369d299d-7875-446c-b169-4c678d0cdb71",
+              "name": "outcome",
+              "value": "human_review",
+              "type": "string"
+            },
+            {
+              "id": "1e474ea9-57a7-4bbd-a5b8-29d6cdb7b304",
+              "name": "human_review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ac7a6b56-186f-433e-906b-ece44cf4bef0",
+              "name": "next_action",
+              "value": "Revisar el fallo al generar una oferta de agenda.",
+              "type": "string"
+            },
+            {
+              "id": "f63ff84f-465a-49f6-94ef-3578367b919b",
+              "name": "automationEligible",
+              "value": false,
+              "type": "boolean"
+            }
+          ],
+          "options": {}
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0956d50e-89bf-4a02-acd2-286487c2af62",
+      "name": "Revisión humana — Fallo de agenda",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2080,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "booking_confirmation",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6e106c4f-2204-4733-8679-496994b44499",
+      "name": "Lógica — ¿Confirmación de reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$input.first().json;\nconst text=String(source.messageText??'').trim();\nconst normalized=text.normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();\nconst spanish=[/^(?:si|sisi|sii+|sip|sim|claro|ok(?:ay)?|perfecto|dale)(?:[,.! ]+(?:confirmo|confirmar|confirmamos|voy|ahi voy a estar))?[.!?]*$/,/^(?:confirmo|dale|de acuerdo|esta bien|me sirve|cancela|cancelalo|cancelala|reprograma|reprogramalo|reprogramala)[.!?]*$/,/^perfecto(?:[,.! ]+ahi voy a estar)?[.!?]*$/,/^ahi voy a estar[.!?]*$/];\nconst english=[/^(?:yes|yeah|yep|yup|ok|okay|sure)(?:[,.! ]+(?:i )?(?:confirm|confirm it|i'?ll be there))?[.!?]*$/,/^(?:confirm|cancel it|reschedule it|sounds good|that works|i'?ll be there|see you then)[.!?]*$/];\nconst flexibleConfirmation=!/\\b(?:no|not|dont|don't)\\s+(?:confirm|confirmo|confirmar)\\b/i.test(normalized)&&/\\b(?:confirm|confirmo|confirmar|confirmamos)\\b/i.test(normalized);\nconst isEnglish=english.some(pattern=>pattern.test(normalized));\nconst modelSaysConfirmation=source.classification_route==='booking_confirmation'||source.intent==='booking_confirmation';\nif(isEnglish||flexibleConfirmation||modelSaysConfirmation||spanish.some(pattern=>pattern.test(normalized))) return [{json:{...source,language:source.language||(isEnglish?'en':'es'),confirmation_route:'resolve_natural',naturalConfirmation:true,automationEligible:true}}];\nreturn [{json:{...source,confirmation_route:'clarify',outcome:'booking_confirmation_clarification_ready',responseDraft:'Para confirmar la propuesta vigente, respondé “sí, confirmo”.',automationEligible:true}}];"
+      },
+      "id": "09276588-27da-46d5-ad8d-e4e5a29e4627",
+      "name": "Lógica — Extraer confirmación de oferta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.confirmation_route }}",
+              "rightValue": "reserve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ad6ffc14-cc4c-42ca-8319-a17b65e5ba5a",
+      "name": "Lógica — ¿Código de confirmación válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Confirmar reserva o reprogramación"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "abb3ecf0-9fa5-44bf-8251-4cd17b372441",
+      "name": "Agenda — Confirmar reserva o reprogramación",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1696,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Extraer confirmación de oferta').first().json;\nconst outcome=String($json.outcome??source.outcome??'');\nif(outcome==='booking_confirmation_clarification_ready') return [{json:{...source,outcome,route:'booking_confirmation',responseDraft:String($json.responseDraft??source.responseDraft??'Para confirmar una propuesta vigente, respondé “sí, confirmo”.'),automationEligible:true}}];\nif(outcome==='meeting_cancelled') return [{json:{...source,outcome:'booking_cancellation_ready',route:'booking_confirmation',responseDraft:'Tu reunión fue cancelada. Si querés, puedo ayudarte a coordinar otro horario.',automationEligible:true}}];\nif(outcome==='meeting_created') return [{json:{...source,outcome:'booking_reservation_ready',route:'booking_confirmation',responseDraft:'Tu reunión quedó confirmada. Te esperamos en el horario acordado.',automationEligible:true}}];\nif(outcome==='booking_offer_unavailable') return [{json:{...source,outcome:'booking_confirmation_unavailable',route:'booking_confirmation',responseDraft:'La propuesta ya no está disponible. Indicame otra fecha y hora para buscar una alternativa.',automationEligible:true}}];\nreturn [{json:{...source,outcome:'human_review',human_review_required:true,next_action:'Revisar el resultado de la confirmación antes de responder.',automationEligible:false}}];"
+      },
+      "id": "f7a35137-2c6c-43b7-b8c4-7c65f4bc8416",
+      "name": "Lógica — Preparar respuesta de reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "meeting_change",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2260a097-31b3-48f4-ac3f-8e3fb587a322",
+      "name": "Lógica — ¿Cambio de reunión?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "<SELECT_IMPORTED_WORKFLOW>",
+          "mode": "id",
+          "cachedResultName": "AI receptionist — Gestionar cambios de reunión"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "d5b100e8-fbec-4b4d-a5d3-42cb957a6940",
+      "name": "Agenda — Gestionar cambio de reunión",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        528,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar clasificación').first().json;\nconst outcome=String($json.outcome??'');\nconst token=String($json.offerToken??'');\nconst date=new Date(String($json.slotStart??''));\nconst label=Number.isNaN(date.getTime())?'el horario solicitado':new Intl.DateTimeFormat('es-AR',{timeZone:'America/Argentina/Buenos_Aires',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(date).replace(',','');\nif(outcome==='booking_cancellation_offer_created'){let cancel={};try{cancel=$('Lógica — Preparar oferta de cancelación').first().json}catch{}const labels=Array.isArray(cancel.cancellationLabels)?cancel.cancellationLabels:[];const detail=labels.length>1?` estas reuniones: ${labels.join(', ')}`:' la reunión';return [{json:{...source,offerToken:token,outcome:'booking_cancellation_confirmation_ready',route:'meeting_change',responseDraft:`La propuesta vence en 15 minutos. Respondé “sí, confirmo” para cancelar${detail}.`,automationEligible:true}}];}\nif(outcome==='booking_offer_created'&&$json.changeType==='reschedule')return [{json:{...source,offerToken:token,requestedSlotLabel:label,outcome:'booking_reschedule_offer_ready',route:'meeting_change',responseDraft:`Tengo disponible ${label} para reprogramar la reunión. La propuesta vence en 15 minutos. Respondé “sí, confirmo” para continuar.`,automationEligible:true}}];\nif(outcome==='booking_change_selection_required'){const matches=Array.isArray($json.matchingReservations)?$json.matchingReservations:[];const meetings=matches.length?matches:(Array.isArray($json.activeReservations)?$json.activeReservations:[]);const list=meetings.map((meeting,index)=>`${index+1}. ${String(meeting.label||'horario sin fecha')}`).join('\\n');const action=$json.changeType==='cancel'?'cancelar':'cambiar';const instruction=matches.length>1?`Encontré más de una reunión que coincide:\\n${list}\\n\\n¿De cuál fecha se trata?`:`Encontré más de una reunión activa:\\n${list}\\n\\nDecime cuál querés ${action}, por ejemplo “la del jueves 8” o “la de las 4 de la tarde”.`;return [{json:{...source,outcome:'booking_change_selection_ready',route:'meeting_change',responseDraft:instruction,automationEligible:true}}];}\nif(outcome==='booking_change_clarification_required')return [{json:{...source,outcome:'booking_change_clarification_ready',route:'meeting_change',responseDraft:'No encontré una reunión que coincida con esa referencia. Decime la fecha y, si podés, el horario.',automationEligible:true}}];\nreturn [{json:{...source,outcome:'human_review',human_review_required:true,next_action:'Revisar el cambio de reunión antes de responder.',automationEligible:false}}];"
+      },
+      "id": "717989b0-f4f6-4e07-af48-795c6dc1baac",
+      "name": "Lógica — Preparar respuesta de cambio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "active_meetings_query",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "65581089-0c4c-42c6-af53-393f9b6e748e",
+      "name": "Lógica — ¿Consulta de reuniones activas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2800,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "contactPhone",
+              "keyValue": "={{ $('Lógica — Validar clasificación').first().json.from }}"
+            }
+          ]
+        },
+        "returnAll": true,
+        "orderBy": true,
+        "orderByColumn": "slotStart",
+        "orderByDirection": "ASC"
+      },
+      "id": "fbfd1ac4-1b89-4f37-af28-936b33cec31c",
+      "name": "Data Tables — Buscar reuniones activas del contacto",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        624
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Validar clasificación').first().json;\nconst active=$input.all().map(item=>item.json)\n  .filter(row=>['reserved','rescheduled'].includes(String(row.status||''))&&String(row.reservationEventId||'').trim()!=='')\n  .sort((left,right)=>new Date(String(left.slotStart||'')).getTime()-new Date(String(right.slotStart||'')).getTime());\nconst formatLabel=(value)=>{const date=new Date(String(value||''));return Number.isNaN(date.getTime())?'horario sin fecha':new Intl.DateTimeFormat('es-AR',{timeZone:'America/Argentina/Buenos_Aires',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(date).replace(',','');};\nconst meetings=active.map(row=>({label:formatLabel(row.slotStart)}));\nconst responseDraft=meetings.length===0?'No tenés reuniones activas registradas. Si querés, puedo ayudarte a coordinar una.':`Tenés estas reuniones activas:\n${meetings.map((meeting,index)=>`${index+1}. ${meeting.label}`).join('\\n')}`;\nreturn [{json:{...source,outcome:'booking_active_meetings_ready',route:'active_meetings_query',responseDraft,activeMeetingCount:meetings.length,automationEligible:true}}];"
+      },
+      "id": "4abdea7b-9985-4726-8ef8-7589f4910abf",
+      "name": "Lógica — Preparar reuniones activas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.confirmation_route }}",
+              "rightValue": "resolve_natural",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "06cbdfb7-ed8c-45ba-8e97-d41ac8998b51",
+      "name": "Lógica — ¿Confirmación natural?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3328,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "contactPhone",
+              "keyValue": "={{ $('Lógica — Extraer confirmación de oferta').first().json.from }}"
+            },
+            {
+              "keyName": "status",
+              "keyValue": "offered"
+            }
+          ]
+        }
+      },
+      "id": "751d6dda-2a7a-47af-93cd-7b75832a0ff4",
+      "name": "Data Tables — Buscar propuesta vigente para confirmación natural",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        3568,
+        848
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Extraer confirmación de oferta').first().json;\nconst offers=$input.all().map(item=>item.json).filter(offer=>{const expiresAt=new Date(String(offer.expiresAt||''));const changeType=String(offer.changeType||'new');const target=String(offer.targetReservationEventId||'').trim();return String(offer.contactPhone||'')===String(source.from||'')&&String(offer.status||'')==='offered'&&/^offer_[A-Za-z0-9_-]{16,128}$/.test(String(offer.offerToken||''))&&['new','reschedule','cancel'].includes(changeType)&&!Number.isNaN(expiresAt.getTime())&&expiresAt.getTime()>Date.now()&&(!['reschedule','cancel'].includes(changeType)||target!=='');});\nconst normalized=String(source.messageText||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();\nconst months={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};\nconst named=normalized.match(/(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)?\\s*(\\d{1,2})\\s+de\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\\s+de\\s+(\\d{4}))?/);const bareNamed=normalized.match(/\\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\\s+(\\d{1,2})\\b/);const numeric=normalized.match(/\\b(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{4}))?\\b/);const time=normalized.match(/\\b(?:a\\s+)?las\\s+(\\d{1,2})(?::([0-5]\\d))?\\s*(de la tarde|de la manana|am|pm)?/);let selectedTime='';if(time){let hour=Number(time[1]);const period=time[3]||'';if(/tarde|pm/.test(period)&&hour<12)hour+=12;else if(/manana|am/.test(period)&&hour===12)hour=0;else if(!period&&hour>0&&hour<8)hour+=12;selectedTime=`${String(hour).padStart(2,'0')}:${time[2]||'00'}`;}\nconst referenceDay=Number(named?.[1]||numeric?.[1]||bareNamed?.[1]||0),referenceMonth=Number(named?months[named[2]]:numeric?.[2]||0),referenceYear=Number(named?.[3]||numeric?.[3]||0);const formatDate=value=>new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value));const hasReference=Boolean(referenceDay||selectedTime);const matched=hasReference?offers.filter(offer=>{const [datePart,timePart]=formatDate(offer.slotStart).split(', ');const [day,month,year]=datePart.split('/').map(Number);return (!referenceDay||(day===referenceDay&&(!referenceMonth||month===referenceMonth)&&(!referenceYear||year===referenceYear)))&&(!selectedTime||timePart===selectedTime);}):offers;\nif(matched.length===1){const offer=matched[0];const token=String(offer.offerToken);return [{json:{...source,confirmation_route:'reserve',confirmationText:`CONFIRMAR ${token}`,confirmationToken:token,meetingTitle:'Reunión — Consultora demo',meetingDescription:'Reserva confirmada explícitamente por el contacto.',naturalConfirmation:true,automationEligible:true}}];}\nconst label=offer=>new Intl.DateTimeFormat('es-AR',{timeZone:'America/Argentina/Buenos_Aires',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(offer.slotStart)).replace(',','');const responseDraft=offers.length===0?'No tengo una propuesta vigente para confirmar. Si querés, indicame una fecha para buscar disponibilidad.':matched.length===0?'No encontré una propuesta pendiente con esa fecha u hora.':`Tengo más de una propuesta pendiente:\\n${offers.map((offer,index)=>`${index+1}. ${label(offer)}`).join('\\n')}\\n\\nDecime cuál querés confirmar, por ejemplo “confirmo la del jueves 8” o “confirmo la de las 4 de la tarde”.`;return [{json:{...source,confirmation_route:'clarify',outcome:'booking_confirmation_clarification_ready',responseDraft,automationEligible:true}}];"
+      },
+      "id": "e30719f9-96dc-499e-aceb-49c341e3e15a",
+      "name": "Lógica — Resolver confirmación natural",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3808,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$input.first().json;\nconst text=String(source.messageText??'').trim();\nconst exactToken=/^\\s*(?:confirmar|confirm)\\s+offer_[A-Za-z0-9_-]{16,128}\\s*[.!?]*\\s*$/i.test(text);\nreturn [{json:{...source,possibleConfirmation:exactToken}}];"
+      },
+      "id": "d8c90018-3843-4500-9d6b-8f6fd054ae0b",
+      "name": "Lógica — Detectar confirmación de propuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.possibleConfirmation === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e1b75bc6-eabf-427d-8850-8687bcd20d11",
+      "name": "Lógica — ¿Posible confirmación?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1488,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$input.first().json;\nconst messageText=String(source.messageText??'').toLowerCase();\nconst inferredEnglish=/\\b(?:i|yes|confirm|cancel|reschedule|meeting|show|my|it)\\b/.test(messageText);\nconst language=source.language==='en'||inferredEnglish?'en':source.language;\nif(language!=='en') return [{json:source}];\nconst outcome=String(source.outcome||'');\nconst slot=String(source.requestedSlotLabel||'the requested time');\nlet responseDraft=String(source.responseDraft||'');\nconst simple={booking_clarification_ready:'To check availability, send a future 30-minute time as YYYY-MM-DD HH:MM. Example: 2026-09-24 15:00.',booking_slot_unavailable:'That time is not available. Send another date and time as YYYY-MM-DD HH:MM.',booking_reservation_ready:'Your meeting is confirmed. We look forward to seeing you at the agreed time.',booking_cancellation_ready:'Your meeting has been cancelled. I can help you arrange another time.',booking_confirmation_unavailable:'That proposal is no longer available. Send another date and time so I can look for an alternative.',booking_confirmation_clarification_ready:'To confirm the current proposal, reply “yes, confirm”. If you have more than one pending proposal, use its confirmation code.',conversation_clarification_ready:'I did not fully understand what you need. I can help schedule, reschedule, cancel, or show meetings. Tell me what you would like to do and, if it concerns a meeting, include the date and time.'};\nif(outcome==='booking_offer_ready') responseDraft=`I have ${slot} available for a 30-minute meeting. The proposal expires in 15 minutes. Reply “yes, confirm” to continue. You can also use CONFIRM ${String(source.offerToken||'')}.`;\nelse if(outcome==='booking_cancellation_confirmation_ready') responseDraft=`The proposal expires in 15 minutes. Reply “yes, cancel” to cancel the meeting. You can also use CONFIRM ${String(source.offerToken||'')}.`;\nelse if(outcome==='booking_reschedule_offer_ready') responseDraft=`I have ${slot} available to reschedule the meeting. The proposal expires in 15 minutes. Reply “yes, confirm” to continue. You can also use CONFIRM ${String(source.offerToken||'')}.`;\nelse if(outcome==='booking_change_selection_ready') responseDraft=responseDraft.replace('Encontré más de una reunión activa:','I found more than one active meeting:').replace('Indicame cuál querés cancelar con su fecha y hora. Ejemplo: CANCELAR 27/09/2026 16:00.','Tell me which one to cancel using its date and time. Example: CANCEL 2026-09-27 16:00.').replace('Indicame primero la reunión actual y después el nuevo horario. Ejemplo: REPROGRAMAR 27/09/2026 16:00 AL 29/09/2026 17:00.','Give me the current meeting first and then the new time. Example: RESCHEDULE 2026-09-27 16:00 TO 2026-09-29 17:00.');\nelse if(outcome==='booking_change_clarification_ready') responseDraft=responseDraft.replace('No encontré una reunión activa asociada a este número.','I could not find an active meeting associated with this number.').replace('Para reprogramar, indicame el nuevo día y horario.','To reschedule, tell me the new date and time.').replace('El nuevo horario debe ser una fecha futura.','The new time must be in the future.').replace('No pude identificar con seguridad qué reunión querés modificar.','I could not safely identify which meeting you want to change.');\nelse if(outcome==='booking_active_meetings_ready') responseDraft=responseDraft.replace('Tenés estas reuniones activas:','You have these active meetings:').replace('No tenés reuniones activas registradas. Si querés, puedo ayudarte a coordinar una.','You have no active meetings on record. I can help you schedule one.');\nelse if(simple[outcome]) responseDraft=simple[outcome];\nreturn [{json:{...source,language,responseDraft}}];"
+      },
+      "id": "93cd08bd-ad63-4d96-9446-2870e701d21d",
+      "name": "Lógica — Localizar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4304,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.classification_route }}",
+              "rightValue": "clarification",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "552455e8-d35a-423d-8dfb-7cd3341931de",
+      "name": "Lógica — ¿Aclaración conversacional?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        288,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source=$input.first().json;\nreturn [{json:{...source,outcome:'conversation_clarification_ready',route:'clarification',responseDraft:'No terminé de entender con precisión qué necesitás. Puedo ayudarte a coordinar, reprogramar, cancelar o consultar reuniones. Decime qué querés hacer y, si se trata de una reunión, incluí la fecha y la hora.',automationEligible:true}}];"
+      },
+      "id": "561c935f-c76b-46dd-8f4d-69c9831cfb87",
+      "name": "Lógica — Preparar aclaración conversacional",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.booking_route }}",
+              "rightValue": "day_availability",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "eec27a73-1b90-4606-a9fb-8daebcc723f9",
+      "name": "Lógica — ¿Consultar día?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1456,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Lógica — Extraer horario de reunión').first().json.calendarId }}"
+        },
+        "timeMin": "={{ $('Lógica — Extraer horario de reunión').first().json.dayStart }}",
+        "timeMax": "={{ $('Lógica — Extraer horario de reunión').first().json.dayEnd }}",
+        "options": {
+          "outputFormat": "raw",
+          "timezone": {
+            "mode": "id",
+            "value": "America/Argentina/Buenos_Aires"
+          }
+        }
+      },
+      "id": "cbd44c39-e22d-4746-b83d-e610cdeae0cf",
+      "name": "Google Calendar — Consultar día disponible",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1664,
+        432
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$('Lógica — Extraer horario de reunión').first().json;\nconst busy=Object.values($json.calendars||{}).flatMap(calendar=>calendar.busy||[]).map(block=>[new Date(block.start).getTime(),new Date(block.end).getTime()]);\nconst free=[];for(let time=new Date(s.dayStart).getTime();time<new Date(s.dayEnd).getTime();time+=1800000){if(time>Date.now()&&!busy.some(block=>time<block[1]&&time+1800000>block[0]))free.push(new Date(time));}\nconst morning=free.filter(slot=>new Intl.DateTimeFormat('en-GB',{timeZone:s.timezone,hour:'2-digit',hour12:false}).format(slot)<='11');\nconst afternoon=free.filter(slot=>new Intl.DateTimeFormat('en-GB',{timeZone:s.timezone,hour:'2-digit',hour12:false}).format(slot)>='12');\nconst formatTime=slot=>new Intl.DateTimeFormat('es-AR',{timeZone:s.timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(slot);\nconst dateLabel=new Intl.DateTimeFormat('es-AR',{timeZone:s.timezone,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s.dayStart));\nconst expiresAt=new Date(Date.now()+900000).toISOString();\nconst asIso=slots=>slots.map(slot=>slot.toISOString());\nconst requestedTime=String(s.requestedTime||'');\nif(/^\\d{2}:\\d{2}$/.test(requestedTime)){\n const [requestedHour,requestedMinute]=requestedTime.split(':').map(Number);const requestedMinutes=requestedHour*60+requestedMinute;\n const minuteOf=slot=>{const [hour,minute]=new Intl.DateTimeFormat('en-GB',{timeZone:s.timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(slot).split(':').map(Number);return hour*60+minute;};\n const nearest=[...free].sort((left,right)=>Math.abs(minuteOf(left)-requestedMinutes)-Math.abs(minuteOf(right)-requestedMinutes)||minuteOf(left)-minuteOf(right)).slice(0,3);\n if(!nearest.length)return [{json:{...s,selectionState:'[]',selectionExpiresAt:expiresAt,outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`No tengo horarios disponibles el ${dateLabel}. Indicame otra fecha.`,automationEligible:true}}];\n return [{json:{...s,selectionState:JSON.stringify(asIso(nearest)),selectionExpiresAt:expiresAt,outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`A las ${requestedTime} no tengo disponibilidad. Lo más cercano ese día es ${nearest.map(formatTime).join(', ')}. ¿Cuál te queda mejor?`,automationEligible:true}}];\n}\nif(!morning.length&&!afternoon.length)return [{json:{...s,selectionState:'[]',selectionExpiresAt:expiresAt,outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`No tengo horarios disponibles el ${dateLabel}. Indicame otra fecha.`,automationEligible:true}}];\nif(morning.length&&afternoon.length){const state={kind:'period_preference',morning:asIso(morning),afternoon:asIso(afternoon)};return [{json:{...s,selectionState:JSON.stringify(state),selectionExpiresAt:expiresAt,outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`Para el ${dateLabel}, ¿preferís un horario a la mañana o a la tarde?`,automationEligible:true}}];}\nconst available=morning.length?morning:afternoon;const unavailablePeriod=morning.length?'tarde':'mañana';const availablePeriod=morning.length?'mañana':'tarde';const pick=available.slice(0,3);\nreturn [{json:{...s,selectionState:JSON.stringify(asIso(pick)),selectionExpiresAt:expiresAt,outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`A la ${unavailablePeriod} no tengo horarios disponibles el ${dateLabel}. Puedo ofrecerte ${pick.map(formatTime).join(', ')} a la ${availablePeriod}. ¿Cuál te queda mejor?`,automationEligible:true}}];"
+      },
+      "id": "a55e2b6e-2612-49c1-bb34-2c0b2e5f12e5",
+      "name": "Lógica — Preparar opciones del día",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "offerToken": "={{ 'selection_' + Date.now() }}",
+            "slotStart": "",
+            "slotEnd": "",
+            "calendarId": "<SELECT_CALENDAR>",
+            "timezone": "America/Argentina/Buenos_Aires",
+            "status": "suggested",
+            "expiresAt": "={{ $json.selectionExpiresAt }}",
+            "consumedAt": "",
+            "reservationEventId": "",
+            "contactPhone": "={{ $json.from }}",
+            "changeType": "selection",
+            "targetReservationEventId": "={{ $json.selectionState }}"
+          },
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "0537706a-4955-4087-bc8b-954e896d19d7",
+      "name": "Data Tables — Guardar opciones de agenda",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2064,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "let resolved={};try{resolved=$('Lógica — Resolver opción de agenda').first().json}catch{}if(resolved.outcome==='booking_day_options_ready')return [{json:resolved}];return [{json:$('Lógica — Preparar opciones del día').first().json}];"
+      },
+      "id": "10aaf0fd-a899-4693-80d7-c8e06ef1188a",
+      "name": "Lógica — Responder opciones de agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.booking_route }}",
+              "rightValue": "resolve_selection",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "52d7cb78-3ee0-43d4-a133-925dbfe06afe",
+      "name": "Lógica — ¿Resolver opción?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "contactPhone",
+              "keyValue": "={{ $('Lógica — Extraer horario de reunión').first().json.from }}"
+            },
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "suggested"
+            }
+          ]
+        },
+        "returnAll": true,
+        "orderBy": true,
+        "orderByColumn": "createdAt",
+        "orderByDirection": "DESC"
+      },
+      "id": "5be4773a-4fc6-4065-a5cc-1ff774a8b2b7",
+      "name": "Data Tables — Buscar opciones vigentes",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1408,
+        608
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$('Lógica — Extraer horario de reunión').first().json;\nconst rows=$input.all().map(item=>item.json).filter(row=>row.status==='suggested'&&['selection','change_selection'].includes(String(row.changeType||''))&&new Date(row.expiresAt)>new Date()).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));\nconst latest=rows[0];\nif(!latest)return [{json:{...s,outcome:'booking_clarification_ready',responseDraft:'No encuentro opciones vigentes. Decime nuevamente qué día te conviene.',automationEligible:true}}];\nlet state;try{state=JSON.parse(latest.targetReservationEventId||'[]')}catch{state=[]}\nif(String(latest.changeType||'')==='change_selection'){\n const candidates=Array.isArray(state?.candidates)?state.candidates:[];\n const normalized=String(s.messageText||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\s+/g,' ').trim();\n const exactTimes=[...(Array.isArray(s.selectedTimeAlternatives)?s.selectedTimeAlternatives:[]),s.selectedTime].filter(value=>/^\\d{2}:\\d{2}$/.test(String(value)));\n const ordinal=/\\b(?:primera|primero|1ra|1ro)\\b/.test(normalized)?0:/\\b(?:segunda|segundo|2da|2do)\\b/.test(normalized)?1:/\\b(?:tercera|tercero|3ra|3ro)\\b/.test(normalized)?2:/\\b(?:ultima|ultimo)\\b/.test(normalized)?candidates.length-1:-1;\n const matches=exactTimes.length?candidates.filter(candidate=>exactTimes.includes(new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(candidate.slotStart)))):(ordinal>=0&&candidates[ordinal]?[candidates[ordinal]]:[]);\n if(matches.length===1){const selected=matches[0];return [{json:{...s,contextualChangeSelection:{changeType:String(state.changeType||''),slotStart:String(selected.slotStart||''),requestedTargetStart:String(state.requestedTargetStart||'')},change_selection_route:'resolve',automationEligible:true}}];}\n const list=candidates.map((candidate,index)=>`${index+1}. ${String(candidate.label||'horario sin fecha')}`).join('\\n');\n return [{json:{...s,change_selection_route:'clarify',outcome:'booking_change_selection_ready',route:'meeting_change',responseDraft:`No pude identificar una sola reunión. Elegí una de estas opciones:\\n${list}\\n\\nPor ejemplo, podés decir “la de las 15:30” o “la primera”.`,automationEligible:true}}];\n}\nconst timezone='America/Argentina/Buenos_Aires';\nconst formatTime=slot=>new Intl.DateTimeFormat('es-AR',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hour12:false}).format(slot);\nconst hourOf=slot=>Number(new Intl.DateTimeFormat('en-GB',{timeZone:timezone,hour:'2-digit',hour12:false}).format(slot));\nconst allSlots=Array.isArray(state)?state:(state?.kind==='period_preference'?[...(state.morning||[]),...(state.afternoon||[])]:Array.isArray(state?.slots)?state.slots:[]);\nconst optionState=(period,slots)=>({kind:'time_preference',period,slots});\nif(s.selectionPreference){if(!state||state.kind!=='period_preference'||!Array.isArray(state[s.selectionPreference]))return [{json:{...s,outcome:'booking_clarification_ready',responseDraft:'Decime nuevamente qué día te conviene y te consulto la franja horaria.',automationEligible:true}}];const slots=state[s.selectionPreference];if(!slots.length)return [{json:{...s,outcome:'booking_clarification_ready',responseDraft:'No tengo horarios disponibles en esa franja. Indicame otra fecha.',automationEligible:true}}];const label=s.selectionPreference==='morning'?'mañana':'tarde';return [{json:{...s,selectionState:JSON.stringify(optionState(s.selectionPreference,slots)),selectionExpiresAt:new Date(Date.now()+900000).toISOString(),outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`Para la ${label}, ¿te queda mejor al principio, a media ${label==='mañana'?'mañana':'tarde'} o hacia el final? También podés decirme una hora, por ejemplo “a las 16”.`,automationEligible:true}}];}\nif(s.timePreference){if(!state||state.kind!=='time_preference'||!Array.isArray(state.slots))return [{json:{...s,outcome:'booking_clarification_ready',responseDraft:'Decime nuevamente qué día y franja te convienen.',automationEligible:true}}];const period=state.period;const inBand=value=>{const hour=hourOf(new Date(value));if(period==='morning')return s.timePreference==='early'?hour<10:s.timePreference==='middle'?hour>=10&&hour<11:hour>=11;return s.timePreference==='early'?hour<14:s.timePreference==='middle'?hour>=14&&hour<16:hour>=16;};const pick=state.slots.filter(inBand).slice(0,3);if(!pick.length)return [{json:{...s,selectionState:JSON.stringify(state),selectionExpiresAt:new Date(Date.now()+900000).toISOString(),outcome:'booking_day_options_ready',route:'booking_request',responseDraft:'No tengo horarios disponibles en ese tramo. Podés decirme otra hora dentro de esa franja.',automationEligible:true}}];return [{json:{...s,selectionState:JSON.stringify(state),selectionExpiresAt:new Date(Date.now()+900000).toISOString(),outcome:'booking_day_options_ready',route:'booking_request',responseDraft:`Tengo disponible ${pick.map(value=>formatTime(new Date(value))).join(', ')}. ¿Cuál te queda mejor?`,automationEligible:true}}];}\nconst requestedTimes=Array.isArray(s.selectedTimeAlternatives)&&s.selectedTimeAlternatives.length?s.selectedTimeAlternatives:[s.selectedTime];\nconst hit=allSlots.find(value=>requestedTimes.includes(formatTime(new Date(value))));\nif(!hit){const requested=s.selectedTime||'';const requestedMinutes=Number(requested.slice(0,2))*60+Number(requested.slice(3,5));const nearby=[...allSlots].sort((left,right)=>Math.abs(hourOf(new Date(left))*60+Number(formatTime(new Date(left)).slice(3,5))-requestedMinutes)-Math.abs(hourOf(new Date(right))*60+Number(formatTime(new Date(right)).slice(3,5))-requestedMinutes)).slice(0,3);const period=state?.period==='morning'?'la mañana':state?.period==='afternoon'?'la tarde':'ese día';return [{json:{...s,selectionState:JSON.stringify(state),selectionExpiresAt:new Date(Date.now()+900000).toISOString(),outcome:'booking_day_options_ready',route:'booking_request',responseDraft:nearby.length?`A las ${requested} no tengo disponibilidad. Lo más cercano en ${period} es ${nearby.map(value=>formatTime(new Date(value))).join(', ')}. ¿Cuál te queda mejor?`:'No tengo horarios disponibles. Decime otra fecha.',automationEligible:true}}];}\nconst start=new Date(hit);return [{json:{...s,booking_route:'offer',requestedStart:start.toISOString(),requestedEnd:new Date(start.getTime()+1800000).toISOString(),requestedSlotLabel:new Intl.DateTimeFormat('es-AR',{timeZone:timezone,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(start).replace(',',''),calendarId:'faustoponceb@gmail.com',timezone,offerExpiresAt:new Date(Date.now()+900000).toISOString()} }];"
+      },
+      "id": "7d621b93-d111-405f-b02e-c2b801b613eb",
+      "name": "Lógica — Resolver opción de agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        608
+      ]
+    },
+    {
+      "id": "cf6915c2-6712-4a6e-900e-6e04aacd287a",
+      "name": "Lógica — ¿Opciones de franja listas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        590
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.outcome }}",
+              "rightValue": "booking_day_options_ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3b474816-d9dc-48e8-9c9b-70282f62835f",
+      "name": "Lógica — ¿Horario ocupado tras oferta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1020,
+        440
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ['slot_unavailable', 'slot_already_offered'].includes(String($json.outcome || '')) ? 'occupied' : 'other' }}",
+              "rightValue": "occupied",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c26f5f1c-60d9-447e-abe0-2f5e8a2ff747",
+      "name": "Data Tables — Buscar propuesta pendiente para interpretar",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        848
+      ],
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "<SELECT_DATA_TABLE_ID>"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "contactPhone",
+              "keyValue": "={{ $('Lógica — Detectar confirmación de propuesta').first().json.from }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "007b5b39-cf12-4612-b486-53ae4d93bbb1",
+      "name": "Lógica — Preparar contexto de propuesta pendiente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        848
+      ],
+      "parameters": {
+        "jsCode": "const source=$('Lógica — Detectar confirmación de propuesta').first().json;\nconst rows=$input.all().map(item=>item.json);\nconst now=Date.now();\nconst validExpiry=row=>{const expiresAt=new Date(String(row.expiresAt||''));return !Number.isNaN(expiresAt.getTime())&&expiresAt.getTime()>now;};\nconst offered=rows.filter(row=>{const changeType=String(row.changeType||'new');const target=String(row.targetReservationEventId||'').trim();return String(row.contactPhone||'')===String(source.from||'')&&String(row.status||'')==='offered'&&['new','reschedule','cancel'].includes(changeType)&&validExpiry(row)&&(!['reschedule','cancel'].includes(changeType)||target!=='');});\nconst pending=offered.length===1?offered[0]:null;\nconst selections=rows.filter(row=>String(row.contactPhone||'')===String(source.from||'')&&String(row.status||'')==='suggested'&&String(row.changeType||'')==='selection'&&validExpiry(row)).sort((left,right)=>new Date(right.createdAt||0)-new Date(left.createdAt||0));\nconst selection=selections[0]||null;\nlet pendingSelectionContext=null;\nif(selection){\n  try{\n    const state=JSON.parse(String(selection.targetReservationEventId||'{}'));\n    const slots=state&&state.kind==='period_preference'?[...(state.morning||[]),...(state.afternoon||[])]:Array.isArray(state?.slots)?state.slots:[];\n    const timezone='America/Argentina/Buenos_Aires';\n    const format=new Intl.DateTimeFormat('es-AR',{timeZone:timezone,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});\n    const labels=slots.map(value=>format.format(new Date(value)).replace(',','')).filter(value=>!value.includes('Invalid')).slice(0,24);\n    if(labels.length)pendingSelectionContext={kind:String(state.kind||''),period:String(state.period||''),availableSlots:labels};\n  }catch{}\n}\nreturn [{json:{...source,pendingProposalAction:pending?String(pending.changeType):'',pendingProposalCount:offered.length,pendingSelectionContext}}];"
+      }
+    },
+    {
+      "id": "fd5d4cc9-0de6-4a8c-aa65-0a00d3d45d21",
+      "name": "Lógica — ¿Selección contextual resuelta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        680
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.change_selection_route }}",
+              "rightValue": "resolve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9a75f1ab-9af5-4467-8342-99737c035e58",
+      "name": "Lógica — ¿Aclaración de selección contextual?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.change_selection_route }}",
+              "rightValue": "clarify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Manual — Probar coordinador": {
+      "main": [
+        [
+          {
+            "node": "Datos — Mensaje de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Mensaje de prueba": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar entrada conversacional",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cuando lo ejecuta otro workflow": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar entrada conversacional",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar entrada conversacional": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Entrada válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Entrada válida?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Detectar confirmación de propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Entrada inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama — Clasificar intención": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar clasificación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo del clasificador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar clasificación": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Aclaración conversacional?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Consulta de conocimiento?": {
+      "main": [
+        [
+          {
+            "node": "Datos — Preparar consulta de conocimiento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Operación — Preparar siguiente paso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Datos — Preparar consulta de conocimiento": {
+      "main": [
+        [
+          {
+            "node": "Conocimiento — Responder con evidencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conocimiento — Responder con evidencia": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Validar respuesta respaldada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de conocimiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Solicitud de reunión?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer horario de reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Confirmación de reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Extraer horario de reunión": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Resolver opción?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Horario de reunión completo?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Generar oferta temporal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Consultar día?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Generar oferta temporal": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Horario ocupado tras oferta?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Confirmación de reunión?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer confirmación de oferta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Consulta de conocimiento?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Extraer confirmación de oferta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Confirmación natural?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Código de confirmación válido?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Confirmar reserva o reprogramación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar respuesta de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Confirmar reserva o reprogramación": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar respuesta de reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Cambio de reunión?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Gestionar cambio de reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Consulta de reuniones activas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agenda — Gestionar cambio de reunión": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar respuesta de cambio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Revisión humana — Fallo de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Consulta de reuniones activas?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar reuniones activas del contacto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Solicitud de reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar reuniones activas del contacto": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar reuniones activas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Confirmación natural?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar propuesta vigente para confirmación natural",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Código de confirmación válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar propuesta vigente para confirmación natural": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Resolver confirmación natural",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Resolver confirmación natural": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Código de confirmación válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Detectar confirmación de propuesta": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Posible confirmación?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Posible confirmación?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Extraer confirmación de oferta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Data Tables — Buscar propuesta pendiente para interpretar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Validar respuesta respaldada": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar respuesta de agenda": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar respuesta de reserva": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar respuesta de cambio": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar reuniones activas": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Aclaración conversacional?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar aclaración conversacional",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Cambio de reunión?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar aclaración conversacional": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Consultar día?": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar — Consultar día disponible",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar respuesta de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar — Consultar día disponible": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar opciones del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar opciones del día": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Guardar opciones de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Resolver opción?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Buscar opciones vigentes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Horario de reunión completo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar opciones vigentes": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Resolver opción de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Resolver opción de agenda": {
+      "main": [
+        [
+          {
+            "node": "Lógica — ¿Selección contextual resuelta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Guardar opciones de agenda": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Responder opciones de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Responder opciones de agenda": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Opciones de franja listas?": {
+      "main": [
+        [
+          {
+            "node": "Data Tables — Guardar opciones de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Horario de reunión completo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Horario ocupado tras oferta?": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar — Consultar día disponible",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — Preparar respuesta de agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Tables — Buscar propuesta pendiente para interpretar": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Preparar contexto de propuesta pendiente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — Preparar contexto de propuesta pendiente": {
+      "main": [
+        [
+          {
+            "node": "Ollama — Clasificar intención",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Selección contextual resuelta?": {
+      "main": [
+        [
+          {
+            "node": "Agenda — Gestionar cambio de reunión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Aclaración de selección contextual?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lógica — ¿Aclaración de selección contextual?": {
+      "main": [
+        [
+          {
+            "node": "Lógica — Localizar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lógica — ¿Opciones de franja listas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "pinData": {}
+}
