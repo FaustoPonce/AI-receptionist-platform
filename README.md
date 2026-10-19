@@ -18,6 +18,6 @@ Qdrant queda disponible solo en `http://127.0.0.1:6333`. Desde el contenedor exi
 
 ## Workflows de n8n
 
-Los exports públicos y saneados están en [`workflows/exports/`](workflows/exports/). Reflejan los nueve workflows activos del recepcionista y se importan inactivos deliberadamente. No contienen credenciales, tokens, IDs de Data Tables o subworkflows, calendarios, teléfonos, datos de ejecución ni estado de conversaciones.
+Los exports públicos y saneados están en [`workflows/exports/`](workflows/exports/). Reflejan los siete workflows activos del recepcionista y se importan inactivos deliberadamente. No contienen credenciales, tokens, IDs de Data Tables o subworkflows, calendarios, teléfonos, datos de ejecución ni estado de conversaciones.
 
 La guía de importación y el rol de cada export están en [`workflows/README.md`](workflows/README.md). Los originales de trabajo pertenecen a `workflows/private/`, que Git ignora.

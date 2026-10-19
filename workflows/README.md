@@ -15,8 +15,6 @@ Todos se exportan con `active: false`: importarlos no activa webhooks, tareas ni
 | `ai-receptionist-confirm-booking-or-reschedule.json` | Confirma reservas, reprogramaciones o cancelaciones luego de una aprobación explícita. |
 | `ai-receptionist-manage-meeting-changes.json` | Encuentra la reunión a modificar o cancelar y prepara la propuesta correspondiente. |
 | `ai-receptionist-log-commercial-interaction.json` | Registra la interacción comercial en HubSpot. |
-| `ai-receptionist-coordinate-conversation.json` | Versión anterior del coordinador que continúa activa en la instancia actual. |
-| `ai-receptionist-confirm-and-book-meeting.json` | Camino anterior de confirmación y reserva que continúa activo en la instancia actual. |
 
 ## Importación segura
 
